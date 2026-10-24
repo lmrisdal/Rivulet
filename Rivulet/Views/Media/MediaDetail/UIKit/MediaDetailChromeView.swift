@@ -624,6 +624,7 @@ final class MediaDetailChromeView: UIView {
     private func rebuildActionButtons(item: MediaItem) {
         actionButtonsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         requestPollTask?.cancel()
+        requestPollTask = nil
 
         // Metadata-only items have no provider, so Play and Watched would no-op.
         if item.isMetadataOnly {
@@ -712,7 +713,16 @@ final class MediaDetailChromeView: UIView {
     private weak var requestLabel: UILabel?
     private var requestSnapshot: MediaRequestSnapshot?
     private var requestPollTask: Task<Void, Never>?
-    private static let downloadPollInterval: Duration = .seconds(10)
+
+    /// How often to re-read a title that is on its way: every 5 s while it
+    /// downloads, every 10 s while it waits to start. nil = nothing to watch.
+    private static func pollInterval(for state: MediaRequestState?) -> Duration? {
+        switch state {
+        case .downloading: return .seconds(5)
+        case .pendingApproval, .processing, .partiallyAvailable: return .seconds(10)
+        case .requestable, .available, .blocklisted, nil: return nil
+        }
+    }
 
     private static func seerrType(for item: MediaItem) -> SeerrMediaType? {
         switch item.kind {
@@ -726,6 +736,7 @@ final class MediaDetailChromeView: UIView {
     /// so a title they know nothing about never grows a button.
     private func addRequestButton(item: MediaItem, after anchor: UIView) {
         requestPollTask?.cancel()
+        requestPollTask = nil
         requestSnapshot = nil
         guard let tmdbID = item.tmdbID, let type = Self.seerrType(for: item),
               MediaRequestStatusResolver.shared.isEnabled else { return }
@@ -747,22 +758,33 @@ final class MediaDetailChromeView: UIView {
     private func applyRequestSnapshot(_ snapshot: MediaRequestSnapshot?, tmdbID: Int,
                                       type: SeerrMediaType, token: UInt64) {
         guard loadToken == token else { return }
+        // A failed re-read keeps the last known state rather than hiding the pill.
+        guard let snapshot else { return }
         requestSnapshot = snapshot
-        let state = snapshot?.state
-        requestButton?.isHidden = state == nil
-        if let state {
-            requestIcon?.image = UIImage(systemName: state.systemImage)
-            requestLabel?.text = state.title
+        requestButton?.isHidden = false
+        requestIcon?.image = UIImage(systemName: snapshot.state.systemImage)
+        requestLabel?.text = snapshot.state.title
+        if requestPollTask == nil, Self.pollInterval(for: snapshot.state) != nil {
+            startRequestPolling(tmdbID: tmdbID, type: type, token: token)
         }
-        requestPollTask?.cancel()
-        guard state?.isDownloading == true else { return }
-        // Keep the percentage live while the page is on screen.
+    }
+
+    /// Keeps the status live while the title is on its way. One loop per page:
+    /// it pauses while the page is off screen and ends when the page changes
+    /// item, goes away, or the title settles (available, blocklisted).
+    private func startRequestPolling(tmdbID: Int, type: SeerrMediaType, token: UInt64) {
         requestPollTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: Self.downloadPollInterval)
-            guard !Task.isCancelled, let self, self.loadToken == token, self.window != nil else { return }
-            let next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
-            guard !Task.isCancelled else { return }
-            self.applyRequestSnapshot(next, tmdbID: tmdbID, type: type, token: token)
+            while !Task.isCancelled {
+                guard let interval = Self.pollInterval(for: self?.requestSnapshot?.state) else { break }
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, let self, self.loadToken == token else { return }
+                guard self.window != nil else { continue }
+                let next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
+                guard !Task.isCancelled else { return }
+                self.applyRequestSnapshot(next, tmdbID: tmdbID, type: type, token: token)
+            }
+            guard !Task.isCancelled, let self, self.loadToken == token else { return }
+            self.requestPollTask = nil
         }
     }
 

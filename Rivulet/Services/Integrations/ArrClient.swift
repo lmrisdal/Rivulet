@@ -61,6 +61,14 @@ nonisolated struct ArrClient: Sendable {
         return DownloadProgress(sizes: queue.map { ($0.size ?? 0, $0.sizeleft ?? 0) })
     }
 
+    /// Asks Radarr or Sonarr to re-read its download clients now. Left alone
+    /// they do it about once a minute, so a faster poll would read the same
+    /// queue sizes over and over. The command runs in the background.
+    func refreshDownloads() async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["name": "RefreshMonitoredDownloads"])
+        _ = try await http.send("api/v3/command", method: "POST", body: body)
+    }
+
     private struct LibraryItem: Decodable {
         let id: Int
         let tmdbId: Int?

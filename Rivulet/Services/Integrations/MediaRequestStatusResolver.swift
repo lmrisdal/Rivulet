@@ -84,6 +84,8 @@ final class MediaRequestStatusResolver {
 
     private var cache: [String: (snapshot: MediaRequestSnapshot?, at: Date)] = [:]
     private static let cacheLifetime: TimeInterval = 10
+    private var lastDownloadRefresh: [IntegrationService: Date] = [:]
+    private static let downloadRefreshInterval: TimeInterval = 4
 
     /// True when the detail page should ask at all.
     var isEnabled: Bool {
@@ -108,8 +110,13 @@ final class MediaRequestStatusResolver {
 
         var download: DownloadProgress?
         if arrConfig.isConfigured {
-            download = try? await ArrClient(service: arrService, config: arrConfig)
-                .progress(tmdbID: tmdbID, tvdbID: tvdbID)
+            let client = ArrClient(service: arrService, config: arrConfig)
+            if refresh, Date().timeIntervalSince(lastDownloadRefresh[arrService] ?? .distantPast)
+                >= Self.downloadRefreshInterval {
+                lastDownloadRefresh[arrService] = Date()
+                try? await client.refreshDownloads()
+            }
+            download = try? await client.progress(tmdbID: tmdbID, tvdbID: tvdbID)
         } else if let statuses = detail?.mediaInfo?.downloadStatus {
             download = DownloadProgress(sizes: statuses.map { ($0.size ?? 0, $0.sizeLeft ?? 0) })
         }
