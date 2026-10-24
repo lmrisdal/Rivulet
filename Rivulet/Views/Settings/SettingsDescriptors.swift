@@ -40,6 +40,7 @@ enum SettingsDescriptorStore {
         if id.hasPrefix("lib_") { return descriptors["libraryRow"] }
         if id.hasPrefix("sb_#livetv") { return descriptors["sidebarLiveTVRow"] }
         if id.hasPrefix("sb_") { return descriptors["sidebarAppRow"] }
+        if id.hasPrefix("intHeader_") { return descriptors["intHeaderRow"] }
         return nil
     }
 
@@ -484,6 +485,51 @@ enum SettingsDescriptorStore {
             icon: "link",
             description: "Optional. Where per-title filter files live, in the open MCF (movie content filter) or EDL format. For a folder, Rivulet looks for a file named after the video file, then the IMDb id (tt0133093.edl), then the Plex rating key. An address can use {file}, {imdb}, {tmdb}, {tvdb} or {id} instead. From moviecontentfilter.com, download the EDL format with your copy's start and end times. Rivulet ships no filter data of its own."
         ),
+        // MARK: Integrations
+        "cat_integrations": SettingDescriptor(
+            icon: "puzzlepiece.extension.fill",
+            description: "Connect Seerr to request movies and shows that are not on your server, and Radarr and Sonarr to follow their downloads."
+        ),
+        "int_seerr": SettingDescriptor(
+            icon: "tray.and.arrow.down.fill",
+            description: "Seerr (Overseerr or Jellyseerr). Adds a Request button to titles that are not in your library, and shows whether a title is requested or available."
+        ),
+        "int_radarr": SettingDescriptor(
+            icon: "film.fill",
+            description: "Radarr. Shows how far along a movie's download is on its page."
+        ),
+        "int_sonarr": SettingDescriptor(
+            icon: "tv.fill",
+            description: "Sonarr. Shows how far along a show's downloads are on its page."
+        ),
+        "int_url": SettingDescriptor(
+            icon: "link",
+            description: "The address you open the service at in a browser, including http:// or https://. A path is fine, for example https://example.com/seerr."
+        ),
+        "int_apiKey": SettingDescriptor(
+            icon: "key.fill",
+            description: "Found in the service's web interface under Settings, then General. It is stored in the Keychain on this Apple TV."
+        ),
+        "int_headers": SettingDescriptor(
+            icon: "list.bullet.rectangle",
+            description: "Extra headers sent with every request, for a reverse proxy that needs its own authentication (Cloudflare Access, Authelia, basic auth)."
+        ),
+        "int_test": SettingDescriptor(
+            icon: "checkmark.circle",
+            description: "Checks the address, the API key and your custom headers together."
+        ),
+        "int_remove": SettingDescriptor(
+            icon: "trash",
+            description: "Forgets the address, the API key and the custom headers for this service."
+        ),
+        "int_addHeader": SettingDescriptor(
+            icon: "plus.circle",
+            description: "Type a header as Name: Value, for example CF-Access-Client-Id: abc123. Adding a header with a name already in the list replaces it."
+        ),
+        "intHeaderRow": SettingDescriptor(
+            icon: "list.bullet.rectangle",
+            description: "Sent with every request to this service. Select to remove it."
+        ),
     ]
 
     // MARK: - Page Descriptors
@@ -528,6 +574,11 @@ enum SettingsDescriptorStore {
         case .addXtream: return ("person.badge.key.fill", .systemIndigo)
         case .addOwnServer: return ("server.rack", .systemBlue)
         case .addPlaylistURL: return ("list.bullet.rectangle", .systemGreen)
+        case .integrations: return ("puzzlepiece.extension.fill", .systemIndigo)
+        case .seerr: return ("tray.and.arrow.down.fill", .systemIndigo)
+        case .radarr: return ("film.fill", .systemYellow)
+        case .sonarr: return ("tv.fill", .systemTeal)
+        case .integrationHeaders: return ("list.bullet.rectangle", .systemIndigo)
         }
     }
 }

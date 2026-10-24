@@ -623,6 +623,7 @@ final class MediaDetailChromeView: UIView {
 
     private func rebuildActionButtons(item: MediaItem) {
         actionButtonsStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        requestPollTask?.cancel()
 
         // Metadata-only items have no provider, so Play and Watched would no-op.
         if item.isMetadataOnly {
@@ -701,6 +702,160 @@ final class MediaDetailChromeView: UIView {
         // The pill is the row's primary focus target (playFocusable feeds
         // the carousel's land-on-primary routing).
         playButton = pill
+        addRequestButton(item: item, after: pill)
+    }
+
+    // MARK: - Request (Seerr) + download progress (Radarr / Sonarr)
+
+    private weak var requestButton: FocusableActionButton?
+    private weak var requestIcon: UIImageView?
+    private weak var requestLabel: UILabel?
+    private var requestSnapshot: MediaRequestSnapshot?
+    private var requestPollTask: Task<Void, Never>?
+    private static let downloadPollInterval: Duration = .seconds(10)
+
+    private static func seerrType(for item: MediaItem) -> SeerrMediaType? {
+        switch item.kind {
+        case .movie: return .movie
+        case .show, .season, .episode: return .tv
+        default: return nil
+        }
+    }
+
+    /// The Request pill after Watchlist, added once the integrations answer,
+    /// so a title they know nothing about never grows a button.
+    private func addRequestButton(item: MediaItem, after anchor: UIView) {
+        requestPollTask?.cancel()
+        requestSnapshot = nil
+        guard let tmdbID = item.tmdbID, let type = Self.seerrType(for: item),
+              MediaRequestStatusResolver.shared.isEnabled else { return }
+        let token = loadToken
+        Task { @MainActor [weak self] in
+            guard let snapshot = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type),
+                  let self, self.loadToken == token, self.requestButton == nil,
+                  let index = self.actionButtonsStack.arrangedSubviews.firstIndex(of: anchor) else { return }
+            let (pill, icon, label) = self.makeLabeledPill()
+            self.requestButton = pill
+            self.requestIcon = icon
+            self.requestLabel = label
+            pill.onPrimaryAction = { [weak self] in self?.requestPressed(item: item, tmdbID: tmdbID, type: type) }
+            self.actionButtonsStack.insertArrangedSubview(pill, at: index + 1)
+            self.applyRequestSnapshot(snapshot, tmdbID: tmdbID, type: type, token: token)
+        }
+    }
+
+    private func applyRequestSnapshot(_ snapshot: MediaRequestSnapshot?, tmdbID: Int,
+                                      type: SeerrMediaType, token: UInt64) {
+        guard loadToken == token else { return }
+        requestSnapshot = snapshot
+        let state = snapshot?.state
+        requestButton?.isHidden = state == nil
+        if let state {
+            requestIcon?.image = UIImage(systemName: state.systemImage)
+            requestLabel?.text = state.title
+        }
+        requestPollTask?.cancel()
+        guard state?.isDownloading == true else { return }
+        // Keep the percentage live while the page is on screen.
+        requestPollTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.downloadPollInterval)
+            guard !Task.isCancelled, let self, self.loadToken == token, self.window != nil else { return }
+            let next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
+            guard !Task.isCancelled else { return }
+            self.applyRequestSnapshot(next, tmdbID: tmdbID, type: type, token: token)
+        }
+    }
+
+    private func refreshRequestState(tmdbID: Int, type: SeerrMediaType) {
+        let token = loadToken
+        Task { @MainActor [weak self] in
+            let next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
+            self?.applyRequestSnapshot(next, tmdbID: tmdbID, type: type, token: token)
+        }
+    }
+
+    private func requestPressed(item: MediaItem, tmdbID: Int, type: SeerrMediaType) {
+        guard let snapshot = requestSnapshot, let host = hostViewController else { return }
+        // Every other state is status only: pressing re-reads it.
+        guard snapshot.state == .requestable else {
+            refreshRequestState(tmdbID: tmdbID, type: type)
+            return
+        }
+        let send: ([Int]) -> Void = { [weak self] seasons in
+            self?.sendRequest(tmdbID: tmdbID, type: type, seasons: seasons, tvdbID: snapshot.tvdbID)
+        }
+        let seasons = snapshot.requestableSeasons
+        if type == .tv, seasons.count > 1 {
+            let alert = UIAlertController(title: "Request \(item.title)", message: "Which seasons do you want?",
+                                          preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "All Seasons", style: .default) { _ in
+                send(seasons.map(\.seasonNumber))
+            })
+            for season in seasons {
+                let name = season.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Season \(season.seasonNumber)"
+                alert.addAction(UIAlertAction(title: name, style: .default) { _ in send([season.seasonNumber]) })
+            }
+            alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+            host.present(alert, animated: true)
+            return
+        }
+        let message = type == .tv
+            ? "Asks Seerr to add \(seasons.first.map { "season \($0.seasonNumber) of " } ?? "")this show."
+            : "Asks Seerr to add this movie."
+        host.present(ConfirmationPopupViewController(
+            title: "Request \(item.title)?", message: message, confirmTitle: "Request",
+            onConfirm: { send(seasons.map(\.seasonNumber)) }), animated: true)
+    }
+
+    private func sendRequest(tmdbID: Int, type: SeerrMediaType, seasons: [Int], tvdbID: Int?) {
+        let token = loadToken
+        requestLabel?.text = "Requesting…"
+        Task { @MainActor [weak self] in
+            do {
+                try await MediaRequestStatusResolver.shared.request(
+                    tmdbID: tmdbID, type: type, seasons: seasons, tvdbID: tvdbID)
+            } catch {
+                if let host = self?.hostViewController {
+                    host.present(ConfirmationPopupViewController(
+                        title: "Couldn't Request", message: error.localizedDescription,
+                        confirmTitle: "OK", cancelTitle: nil, onConfirm: {}), animated: true)
+                }
+            }
+            let next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
+            self?.applyRequestSnapshot(next, tmdbID: tmdbID, type: type, token: token)
+        }
+    }
+
+    /// Icon + label pill with the Play pill's geometry.
+    private func makeLabeledPill() -> (FocusableActionButton, UIImageView, UILabel) {
+        let pill = FocusableActionButton()
+        pill.translatesAutoresizingMaskIntoConstraints = false
+        pill.layer.cornerRadius = Self.actionButtonHeight / 2
+        pill.layer.cornerCurve = .continuous
+
+        let icon = UIImageView()
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.tintColor = .white
+        icon.contentMode = .scaleAspectFit
+
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = HeroPillButton.titleFont
+        label.textColor = .white
+
+        let contentStack = UIStackView(arrangedSubviews: [icon, label])
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+        contentStack.axis = .horizontal
+        contentStack.alignment = .center
+        contentStack.spacing = HeroPillButton.iconGap
+
+        pill.addSubview(contentStack)
+        NSLayoutConstraint.activate(Self.pillConstraints(pill, content: contentStack) + [
+            icon.widthAnchor.constraint(equalToConstant: 24),
+            icon.heightAnchor.constraint(equalToConstant: 24)
+        ])
+        pill.invertOnFocus = [icon, label]
+        return (pill, icon, label)
     }
 
     /// Watchlist pill — same hardcoded geometry as the Play pill

@@ -56,6 +56,7 @@ enum SettingsPage: Hashable, CaseIterable {
     case homeQualityPicker, awayQualityPicker
     case audioLanguagePicker, subtitleLanguagePicker
     case contentFilter, contentFilterStrength
+    case integrations, seerr, radarr, sonarr, integrationHeaders
 
     var title: String {
         switch self {
@@ -93,6 +94,11 @@ enum SettingsPage: Hashable, CaseIterable {
         case .subtitleLanguagePicker: return "Subtitle Language"
         case .contentFilter: return "Content Filtering"
         case .contentFilterStrength: return "Profanity Strength"
+        case .integrations: return "Integrations"
+        case .seerr: return "Seerr"
+        case .radarr: return "Radarr"
+        case .sonarr: return "Sonarr"
+        case .integrationHeaders: return "Custom Headers"
         }
     }
 }

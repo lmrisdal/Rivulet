@@ -220,6 +220,11 @@ enum SettingsContent {
         case .subtitleLanguagePicker: return subtitleLanguagePicker
         case .contentFilter:          return contentFilter
         case .contentFilterStrength:  return contentFilterStrength
+        case .integrations:           return integrations
+        case .seerr:                  return integrationRows(.seerr)
+        case .radarr:                 return integrationRows(.radarr)
+        case .sonarr:                 return integrationRows(.sonarr)
+        case .integrationHeaders:     return integrationHeaders
         }
     }
 
@@ -408,6 +413,7 @@ enum SettingsContent {
 //            SettingsRowItem(id: "cat_music",      title: "Music",      kind: .navigation(.music)),
             SettingsRowItem(id: "cat_liveTV",     title: "Live TV",    kind: .navigation(.liveTV)),
             SettingsRowItem(id: "cat_servers",    title: "Servers",    kind: .navigation(.servers)),
+            SettingsRowItem(id: "cat_integrations", title: "Integrations", kind: .navigation(.integrations)),
             SettingsRowItem(id: "cache",          title: "Cache & Storage", kind: .navigation(.cache)),
             SettingsRowItem(id: "cat_about",      title: "About",      kind: .navigation(.about))
         ]
