@@ -4639,8 +4639,10 @@ final class PlexHomeViewController: UIViewController {
     /// surface should not get the trending upgrade (home uses the interleaved
     /// path instead; non-video libraries get none).
     private func trendingHeroType() -> TMDBMediaType? {
-        guard case .library(let key, _) = mode else { return nil }
-        switch dataStore.libraries.first(where: { $0.key == key })?.type {
+        guard case .library(let key, _) = mode,
+              let library = dataStore.libraries.first(where: { $0.key == key }),
+              !library.isPersonalMediaLibrary else { return nil }
+        switch library.type {
         case "movie": return .movie
         case "show": return .tv
         default: return nil
@@ -4743,9 +4745,21 @@ final class PlexHomeViewController: UIViewController {
         }
     }
 
-    /// Drops hero candidates from libraries removed from Home. Neither `/hubs` nor `LibraryGUIDIndex`
-    /// knows the client-side Home set, and only PlexMetadata carries section attribution, so this is the
-    /// last place to apply it. Fails open on an unloaded library list. Library heroes are left alone.
+    /// Drops hero candidates belonging to a library the user removed from Home.
+    ///
+    /// The home hero is fed by the account-level `/hubs` (cross-library by
+    /// construction) and by `LibraryGUIDIndex` trending matches (which index
+    /// every library on the server). Rivulet's shown-on-Home set is client-side
+    /// UserDefaults that Plex never sees, so neither source honours it and a
+    /// hidden library keeps supplying hero slides — visibly duplicated for
+    /// anyone running mirrored libraries. Only `PlexMetadata` carries the
+    /// section attribution, so this is the last point at which it can be
+    /// applied. Fails open on an unloaded library list; see
+    /// `PlexLibraryVisibilityFilter`.
+    ///
+    /// A library page keeps only its own section: trending matches come from
+    /// the same server-wide index and would otherwise pull in titles from
+    /// another library of the same type.
     private func heroItemsVisibleOnHome(_ items: [PlexMetadata]) -> [PlexMetadata] {
         switch mode {
         case .home:
@@ -4753,7 +4767,9 @@ final class PlexHomeViewController: UIViewController {
                 items,
                 toLibraryKeys: dataStore.librariesPinnedToHome.map { $0.key }
             )
-        case .library, .discover, .search, .watchlist, .collection, .playlists, .playlist:
+        case .library(let key, _):
+            return PlexLibraryVisibilityFilter.filter(items, toLibraryKeys: [key])
+        case .discover, .search, .watchlist, .collection, .playlists, .playlist:
             return items
         }
     }

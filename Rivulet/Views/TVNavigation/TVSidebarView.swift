@@ -456,7 +456,17 @@ struct TVSidebarView: View {
                                 size: pageSize,
                                 includeGuids: true
                             )
-                            allItems.append(contentsOf: result.items)
+                            // Section listings carry the section on the container,
+                            // not the items; stamp it so a library's hero can
+                            // keep to its own section.
+                            let sectionID = Int(PlexLibraryVisibilityFilter.normalizedSectionID(library.key))
+                            allItems.append(contentsOf: result.items.map { item in
+                                var item = item
+                                if item.librarySectionID == nil && item.librarySectionKey == nil {
+                                    item.librarySectionID = sectionID
+                                }
+                                return item
+                            })
                             start += result.items.count
                             // An empty page or reaching the reported total is the
                             // only way out that means we actually saw the section

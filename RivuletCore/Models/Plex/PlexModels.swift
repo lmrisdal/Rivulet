@@ -190,6 +190,13 @@ nonisolated struct PlexLibrary: Codable, Identifiable, Hashable, Sendable {
         type == "movie" || type == "show"
     }
 
+    /// A library with no metadata agent: Plex's "Home Videos" / "Other Videos"
+    /// (`com.plexapp.agents.none`, `tv.plex.agents.none`). It is `type == "movie"`
+    /// but holds personal files with no TMDB identity.
+    var isPersonalMediaLibrary: Bool {
+        agent?.hasSuffix(".none") == true
+    }
+
     /// Check if this is a music library
     var isMusicLibrary: Bool {
         type == "artist"
