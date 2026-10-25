@@ -77,6 +77,13 @@ final class DownloadProgressTests: XCTestCase {
 }
 
 final class MediaRequestStateTests: XCTestCase {
+    func test_finishedDownload_readsAsProcessing() throws {
+        let done = try XCTUnwrap(DownloadProgress(sizes: [(size: 10, left: 0)]))
+        let partial = try XCTUnwrap(DownloadProgress(sizes: [(size: 10, left: 1)]))
+        XCTAssertEqual(MediaRequestState.downloading(done).title, "Processing Download")
+        XCTAssertEqual(MediaRequestState.downloading(partial).title, "Downloading 90%")
+    }
+
     func test_downloadWins() throws {
         let progress = try XCTUnwrap(DownloadProgress(sizes: [(size: 10, left: 5)]))
         XCTAssertEqual(MediaRequestState.resolve(seerrStatus: nil, hasPendingRequest: false,

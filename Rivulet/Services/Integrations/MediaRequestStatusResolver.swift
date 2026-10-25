@@ -47,7 +47,9 @@ nonisolated enum MediaRequestState: Equatable, Sendable {
         case .requestable: return "Request"
         case .pendingApproval: return "Requested"
         case .processing: return "Processing"
-        case .downloading(let progress): return "Downloading \(progress.percentText)"
+        case .downloading(let progress):
+            // Fully downloaded but still in the queue: being unpacked and imported.
+            return progress.fraction >= 1 ? "Processing Download" : "Downloading \(progress.percentText)"
         case .partiallyAvailable: return "Partly Available"
         case .available: return "Available"
         case .blocklisted: return "Blocklisted"
