@@ -93,7 +93,7 @@ final class TMDBDiscoverServiceTests: XCTestCase {
          "episode_run_time": [47], "genres": [{"id":18,"name":"Drama"}],
          "credits": {"cast": [{"id":1,"name":"Example Actor"}]}}
         """.data(using: .utf8)!
-        TMDBMockURLProtocol.responses["3/tv/300?append_to_response=credits"] = (200, json)
+        TMDBMockURLProtocol.responses["3/tv/300?append_to_response=credits,videos"] = (200, json)
 
         let service = TMDBDiscoverService(session: makeMockSession())
         let detail = await service.fetchDetail(tmdbId: 300, type: .tv)
@@ -107,7 +107,7 @@ final class TMDBDiscoverServiceTests: XCTestCase {
     }
 
     func testFetchDetailReturnsNilOnFailure() async {
-        TMDBMockURLProtocol.responses["3/movie/1?append_to_response=credits"] = (404, Data())
+        TMDBMockURLProtocol.responses["3/movie/1?append_to_response=credits,videos"] = (404, Data())
         let service = TMDBDiscoverService(session: makeMockSession())
         let detail = await service.fetchDetail(tmdbId: 1, type: .movie)
         XCTAssertNil(detail)

@@ -95,6 +95,9 @@ final class BelowFoldCollectionView: UIView, UICollectionViewDelegate {
     private var dataSource: UICollectionViewDiffableDataSource<BelowFoldSectionKind, BelowFoldItem>!
     private var sectionKinds: [BelowFoldSectionKind] = []
 
+    /// An empty rail has no focus destination; keep the hero visible until rows arrive.
+    var hasContent: Bool { !sectionKinds.isEmpty }
+
     private let loader = BelowFoldContentLoader()
     private var loadToken: UInt64 = 0
     /// Last item handed to `configure`/`configureEpisodesOnly`. Held so a
@@ -735,6 +738,12 @@ final class BelowFoldCollectionView: UIView, UICollectionViewDelegate {
             let id = "dir:\(d.id)"
             guard seenCastIDs.insert(id).inserted else { continue }
             entries[id] = CastEntry(person: d, subtitle: "Director")
+            cachedCastOrder.append((id, .cast(id)))
+        }
+        for writer in content.writers {
+            let id = "writer:\(writer.id)"
+            guard seenCastIDs.insert(id).inserted else { continue }
+            entries[id] = CastEntry(person: writer, subtitle: writer.role ?? "Writer")
             cachedCastOrder.append((id, .cast(id)))
         }
         for c in content.cast {

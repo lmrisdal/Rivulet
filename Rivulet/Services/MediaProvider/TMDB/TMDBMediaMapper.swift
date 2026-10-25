@@ -74,13 +74,27 @@ enum TMDBMediaMapper {
     }
 
     static func detail(_ tmdb: TMDBItemDetail) -> MediaItemDetail {
-        let cast = tmdb.cast.map { credit in
+        func person(_ credit: TMDBCredit, filter: String = "actor") -> MediaPerson {
             MediaPerson(
-                id: "\(credit.id ?? 0)",
-                name: credit.name ?? "",
-                role: credit.character,
-                imageURL: nil
-            )
+                id: "\(credit.id ?? 0)", name: credit.name ?? "",
+                role: credit.character ?? credit.job,
+                imageURL: credit.profilePath.flatMap { URL(string: "https://image.tmdb.org/t/p/w185" + $0) },
+                originFilter: filter, titleTmdbId: tmdb.id, titleIsMovie: tmdb.mediaType == .movie,
+                backdropURL: tmdb.backdropPath.flatMap { URL(string: "https://image.tmdb.org/t/p/w1280" + $0) })
+        }
+        let cast = tmdb.cast.filter { $0.id != nil && $0.name != nil }.map { person($0) }
+        let directors = tmdb.crew.filter { $0.job == "Director" }.map { person($0, filter: "director") }
+        let writers = tmdb.crew.filter { $0.department == "Writing" }.map { person($0, filter: "writer") }
+        let trailers: [MediaItemDetail.Extra] = tmdb.videos.compactMap { video in
+            guard video.site == "YouTube", video.type == "Trailer" || video.type == "Teaser",
+                  !video.key.isEmpty else { return nil }
+            var url = URLComponents(string: "https://www.youtube.com/watch")!
+            url.queryItems = [URLQueryItem(name: "v", value: video.key)]
+            return MediaItemDetail.Extra(
+                id: video.id, title: video.name,
+                thumbnailURL: URL(string: "https://i.ytimg.com/vi/\(video.key)/hqdefault.jpg"),
+                duration: nil, playbackKey: url.url?.absoluteString,
+                providerID: providerID, subtype: .trailer)
         }
         // Re-stub a TMDBListItem so we can reuse `item(_:)` for the embedded MediaItem.
         let stub = TMDBListItem(
@@ -121,15 +135,16 @@ enum TMDBMediaMapper {
             genres: tmdb.genres.compactMap(\.name),
             studios: [],
             cast: cast,
-            directors: [],
-            writers: [],
+            directors: directors,
+            writers: writers,
             chapters: [],
             mediaSources: [],
-            trailerURL: nil,
+            trailerURL: trailers.first?.playbackKey.flatMap(URL.init(string:)),
             contentRating: nil,
             ratings: MediaRating.ordered([MediaRating(tmdb.voteAverage, source: .tmdb)]),
             nextEpisode: nil,
-            collections: []
+            collections: [],
+            extras: trailers
         )
     }
 }

@@ -81,6 +81,16 @@ nonisolated struct MediaRequestSnapshot: Sendable {
     /// Where Seerr says the library copy is, once it has one.
     var plexRatingKey: String? = nil
     var jellyfinItemID: String? = nil
+    var requesterName: String? = nil
+
+    var title: String {
+        switch state {
+        case .processing, .pendingApproval:
+            return requesterName.map { "Requested by \($0)" } ?? state.title
+        default:
+            return state.title
+        }
+    }
 }
 
 @MainActor
@@ -138,7 +148,8 @@ final class MediaRequestStatusResolver {
         ).map {
             MediaRequestSnapshot(state: $0, requestableSeasons: requestable, tvdbID: tvdbID,
                                  plexRatingKey: detail?.mediaInfo?.ratingKey,
-                                 jellyfinItemID: detail?.mediaInfo?.jellyfinMediaId)
+                                 jellyfinItemID: detail?.mediaInfo?.jellyfinMediaId,
+                                 requesterName: type == .movie ? detail?.requesterName : nil)
         }
         cache[key] = (snapshot, Date())
         return snapshot

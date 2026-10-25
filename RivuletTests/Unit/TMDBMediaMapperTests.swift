@@ -11,6 +11,29 @@ import XCTest
 
 final class TMDBMediaMapperTests: XCTestCase {
 
+    func testCatalogDetailsIncludeCreditsAndTrailersAndSurviveCacheRoundTrip() throws {
+        let json = #"""
+        {"id":42,"title":"Catalog Movie","credits":{
+          "cast":[{"id":7,"name":"Actor","character":"Hero","profile_path":"/actor.jpg"}],
+          "crew":[{"id":8,"name":"Director","job":"Director","department":"Directing"},
+                  {"id":9,"name":"Writer","job":"Screenplay","department":"Writing"}]},
+         "videos":{"results":[
+          {"id":"trailer","key":"abc123","name":"Official Trailer","site":"YouTube","type":"Trailer"},
+          {"id":"other","key":"xyz","name":"Clip","site":"YouTube","type":"Clip"}]}}
+        """#
+        let decoded = try JSONDecoder().decode(TMDBItemDetail.self, from: Data(json.utf8))
+        let cached = try JSONDecoder().decode(TMDBItemDetail.self, from: JSONEncoder().encode(decoded))
+        let detail = TMDBMediaMapper.detail(cached)
+        XCTAssertEqual(detail.cast.first?.imageURL?.absoluteString, "https://image.tmdb.org/t/p/w185/actor.jpg")
+        XCTAssertEqual(detail.cast.first?.titleTmdbId, 42)
+        XCTAssertEqual(detail.directors.first?.name, "Director")
+        XCTAssertEqual(detail.writers.first?.name, "Writer")
+        XCTAssertEqual(detail.extras.count, 1)
+        XCTAssertEqual(detail.extras.first?.playbackKey, "https://www.youtube.com/watch?v=abc123")
+        XCTAssertEqual(cached.crew.count, 2)
+        XCTAssertEqual(cached.videos.count, 2)
+    }
+
     // MARK: - ItemID encoding
 
     func testEncodeItemIDIncludesTypeAndId() {

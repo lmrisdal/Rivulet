@@ -42,9 +42,7 @@ final class TMDBMetadataSource: MetadataSource {
     }
 
     func recommendations(for ref: MediaItemRef) async throws -> [MediaItem] {
-        // The detail surface's "Recommended for You" row reimplements this via
-        // TMDBDiscoverService.discover (genre-seeded) once detail is in hand.
-        // Stub: empty.
-        return []
+        guard let (tmdbId, type) = TMDBMediaMapper.decodeItemID(ref.itemID) else { return [] }
+        return await service.recommendations(tmdbId: tmdbId, type: type).map { TMDBMediaMapper.item($0) }
     }
 }

@@ -785,7 +785,7 @@ final class MediaDetailChromeView: UIView {
         }
         requestButton?.isHidden = false
         requestIcon?.image = UIImage(systemName: snapshot.state.systemImage)
-        requestLabel?.text = snapshot.state.title
+        requestLabel?.text = snapshot.title
         if requestPollTask == nil,
            Self.pollInterval(for: snapshot.state, awaitingArrival: requestAwaitingArrival) != nil {
             startRequestPolling(tmdbID: tmdbID, type: type, token: token)

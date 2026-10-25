@@ -819,6 +819,10 @@ final class PreviewCarouselViewController: UIViewController {
     private func handleUpNavigation() -> Bool {
         // Only the top of the details is ours; from a lower row the engine moves up one row.
         if state.phase == .detailsStable {
+            if !expandedDetail.belowFoldCollection.hasContent {
+                returnToHeroFromBelowFold()
+                return true
+            }
             if expandedDetail.focusIsOnPills {
                 returnToHeroFromBelowFold()
                 return true
@@ -1075,6 +1079,19 @@ final class PreviewCarouselViewController: UIViewController {
     /// 404s under `/library/metadata` (#255); it plays directly through a synthetic PlexMetadata.
     private func presentExtraPlayer(_ trailer: BelowFoldTrailer) {
         let key = trailer.playbackKey ?? trailer.id
+        if trailer.providerID == TMDBMediaMapper.providerID {
+            guard let url = URL(string: key), url.scheme == "https", url.host == "www.youtube.com" else { return }
+            UIApplication.shared.open(url, options: [:]) { [weak self] opened in
+                guard !opened else { return }
+                Task { @MainActor [weak self] in
+                    let alert = UIAlertController(title: "YouTube Unavailable",
+                        message: "Install the YouTube app to watch this trailer.", preferredStyle: .alert)
+                    alert.addAction(UIAlertAction(title: "OK", style: .cancel))
+                    self?.present(alert, animated: true)
+                }
+            }
+            return
+        }
         // Off Plex an extra is a library item of its own provider.
         if let provider = MediaProviderRegistry.shared.provider(for: trailer.providerID), provider.kind != .plex {
             playProviderExtra(MediaItemRef(providerID: trailer.providerID, itemID: key), provider: provider)
@@ -1189,12 +1206,13 @@ final class PreviewCarouselViewController: UIViewController {
         switch direction {
         case .down:
             if state.isCarouselInputEnabled { return true }
-            if state.phase == .expandedHero { return true }
+            if state.phase == .expandedHero { return expandedDetail.belowFoldCollection.hasContent }
             if state.phase == .detailsStable, expandedDetail.focusIsOnPills { return true }
             return false
         case .up:
             if state.phase == .expandedHero { return true }
             if state.phase == .detailsStable {
+                if !expandedDetail.belowFoldCollection.hasContent { return true }
                 return touchBeganOnDetailsTopRow
                     && (expandedDetail.focusIsOnPills || expandedDetail.focusIsOnEpisodes)
             }
@@ -1409,7 +1427,8 @@ final class PreviewCarouselViewController: UIViewController {
 
     /// Down from the expanded hero: slides into the below-fold details, then hands focus in.
     private func enterBelowFold() {
-        guard state.phase == .expandedHero else { return }
+        guard state.phase == .expandedHero,
+              expandedDetail.belowFoldCollection.hasContent else { return }
         state.markDetailsStable()
         // Always enter on the episodes, never stale on the pills.
         expandedDetail.detailsFocusTarget = .episodes
@@ -1418,6 +1437,10 @@ final class PreviewCarouselViewController: UIViewController {
         // overshoots to Cast.
         expandedDetail.belowFoldCollection.slideToDetailsTop(animated: true) { [weak self] in
             guard let self else { return }
+            guard self.expandedDetail.belowFoldCollection.hasContent else {
+                self.returnToHeroFromBelowFold()
+                return
+            }
             self.expandedDetail.setBelowFoldInteractive(true)
             // Lay out first: a preferred index path whose cell is not realized
             // throws NSInternalInconsistencyException.

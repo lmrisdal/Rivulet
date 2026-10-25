@@ -50,6 +50,7 @@ nonisolated struct SeerrMediaDetail: Decodable, Sendable {
             }
             let status: Int?
             let is4k: Bool?
+            let requestedBy: SeerrRequest.User?
             let seasons: [RequestedSeason]?
         }
         let status: Int?
@@ -83,6 +84,11 @@ nonisolated struct SeerrMediaDetail: Decodable, Sendable {
     /// True while a non-4K request is waiting for approval.
     var hasPendingRequest: Bool {
         activeRequests.contains { $0.status == SeerrRequestStatus.pending.rawValue }
+    }
+
+    var requesterName: String? {
+        activeRequests.compactMap { $0.requestedBy?.displayName }
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     private var activeRequests: [MediaInfo.Request] {

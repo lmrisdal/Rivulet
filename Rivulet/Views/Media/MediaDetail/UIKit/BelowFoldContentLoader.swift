@@ -14,6 +14,7 @@ struct BelowFoldContent: Sendable {
     var episodes: [MediaItem] = []
     var cast: [MediaPerson] = []
     var directors: [MediaPerson] = []
+    var writers: [MediaPerson] = []
     var trailers: [BelowFoldTrailer] = []
     var extras: [BelowFoldTrailer] = []   // non-trailer extras (behind the scenes, etc.)
     var related: [MediaItem] = []
@@ -51,6 +52,21 @@ final class BelowFoldContentLoader {
     func load(for item: MediaItem, detail: MediaItemDetail?) async -> BelowFoldContent {
         var content = BelowFoldContent()
         guard let provider = MediaProviderRegistry.shared.provider(for: item.ref.providerID) else {
+            guard let source = MetadataSourceRegistry.shared.source(for: item.ref.providerID) else { return content }
+            let resolvedDetail: MediaItemDetail?
+            if let detail { resolvedDetail = detail }
+            else { resolvedDetail = try? await source.itemDetail(item.ref) }
+            guard let resolved = resolvedDetail else { return content }
+            content.detail = resolved
+            content.cast = resolved.cast
+            content.directors = resolved.directors
+            content.writers = resolved.writers
+            content.trailers = resolved.extras.filter(\.isTrailer).map {
+                BelowFoldTrailer(id: $0.id, title: $0.title, artworkURL: $0.thumbnailURL,
+                                 durationFormatted: $0.duration.map(Self.formatTrailerDuration),
+                                 subtype: $0.subtype, playbackKey: $0.playbackKey, providerID: $0.providerID)
+            }
+            content.related = (try? await source.recommendations(for: item.ref)) ?? []
             return content
         }
 

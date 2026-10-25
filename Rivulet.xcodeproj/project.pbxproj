@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 100;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -38,7 +38,7 @@
 		A70B44472F05AF3200DEF5ED /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			dstPath = "";
-			dstSubfolderSpec = 13;
+			dstSubfolder = PlugIns;
 			files = (
 				A70B44422F05AF3200DEF5ED /* TopShelfExtension.appex in Embed Foundation Extensions */,
 			);
@@ -363,7 +363,10 @@
 			alwaysOutOfDate = 1;
 			name = "Upload dSYMs to Sentry";
 			shellPath = /bin/sh;
-			shellScript = "\"${SRCROOT}/Scripts/sentry-upload-dsyms.sh\"\n";
+			shellScript = (
+				"\"${SRCROOT}/Scripts/sentry-upload-dsyms.sh\"",
+				"",
+			);
 		};
 /* End PBXShellScriptBuildPhase section */
 

@@ -154,6 +154,15 @@ struct TMDBListItem: Codable, Identifiable, Hashable, Sendable {
     }
 }
 
+/// TMDB video references are hosted externally, not direct media URLs.
+struct TMDBVideo: Codable, Sendable {
+    let id: String
+    let key: String
+    let name: String
+    let site: String
+    let type: String
+}
+
 struct TMDBItemDetail: Codable, Identifiable, Sendable {
     let id: Int
     let title: String
@@ -165,6 +174,8 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
     let genres: [TMDBGenre]
     let voteAverage: Double?
     let cast: [TMDBCredit]
+    let crew: [TMDBCredit]
+    let videos: [TMDBVideo]
     let mediaType: TMDBMediaType
 
     enum CodingKeys: String, CodingKey {
@@ -181,7 +192,7 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
         case credits
         case genres
         case voteAverage = "vote_average"
-        case cast
+        case cast, crew, videos
         case mediaType = "media_type"
     }
 
@@ -196,6 +207,8 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
         genres: [TMDBGenre],
         voteAverage: Double?,
         cast: [TMDBCredit],
+        crew: [TMDBCredit] = [],
+        videos: [TMDBVideo] = [],
         mediaType: TMDBMediaType
     ) {
         self.id = id
@@ -208,6 +221,8 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
         self.genres = genres
         self.voteAverage = voteAverage
         self.cast = cast
+        self.crew = crew
+        self.videos = videos
         self.mediaType = mediaType
     }
 
@@ -231,9 +246,14 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
             ?? (try? c.decode([Int].self, forKey: .episodeRunTime))?.first
         genres = (try? c.decode([TMDBGenre].self, forKey: .genres)) ?? []
         voteAverage = try? c.decode(Double.self, forKey: .voteAverage)
-        struct Credits: Decodable { let cast: [TMDBCredit]? }
+        struct Credits: Decodable { let cast: [TMDBCredit]?; let crew: [TMDBCredit]? }
         cast = (try? c.decode(Credits.self, forKey: .credits))?.cast
             ?? (try? c.decode([TMDBCredit].self, forKey: .cast)) ?? []
+        crew = (try? c.decode(Credits.self, forKey: .credits))?.crew
+            ?? (try? c.decode([TMDBCredit].self, forKey: .crew)) ?? []
+        struct Videos: Decodable { let results: [TMDBVideo] }
+        videos = (try? c.decode(Videos.self, forKey: .videos))?.results
+            ?? (try? c.decode([TMDBVideo].self, forKey: .videos)) ?? []
         if c.contains(.mediaType) {
             let raw = try c.decode(String.self, forKey: .mediaType)
             guard let parsed = TMDBMediaType(rawValue: raw) else {
@@ -262,6 +282,8 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
         try c.encode(genres, forKey: .genres)
         try c.encodeIfPresent(voteAverage, forKey: .voteAverage)
         try c.encode(cast, forKey: .cast)
+        try c.encode(crew, forKey: .crew)
+        try c.encode(videos, forKey: .videos)
         try c.encode(mediaType.rawValue, forKey: .mediaType)
     }
 }

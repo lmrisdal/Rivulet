@@ -107,7 +107,7 @@ actor TMDBDiscoverService {
         }
 
         let endpoint = "\(type.rawValue)/\(tmdbId)"
-        let queryItems = [URLQueryItem(name: "append_to_response", value: "credits")]
+        let queryItems = [URLQueryItem(name: "append_to_response", value: "credits,videos")]
 
         guard let data = try? await fetchData(endpoint: endpoint, queryItems: queryItems),
               let decoded = try? JSONDecoder().decode(TMDBItemDetail.self, from: data) else {
@@ -124,10 +124,23 @@ actor TMDBDiscoverService {
             genres: decoded.genres,
             voteAverage: decoded.voteAverage,
             cast: decoded.cast,
+            crew: decoded.crew,
+            videos: decoded.videos,
             mediaType: type
         )
         saveDetailToDisk(detail, tmdbId: tmdbId, type: type)
         return detail
+    }
+
+    func recommendations(tmdbId: Int, type: TMDBMediaType) async -> [TMDBListItem] {
+        struct Response: Decodable { let results: [TMDBListItem] }
+        guard let data = try? await fetchData(endpoint: "\(type.rawValue)/\(tmdbId)/recommendations", queryItems: []),
+              let response = try? JSONDecoder().decode(Response.self, from: data) else { return [] }
+        return response.results.map { item in
+            TMDBListItem(id: item.id, title: item.title, overview: item.overview,
+                         posterPath: item.posterPath, backdropPath: item.backdropPath,
+                         releaseDate: item.releaseDate, voteAverage: item.voteAverage, mediaType: type)
+        }
     }
 
     // MARK: - Discover (For You)
@@ -219,7 +232,7 @@ actor TMDBDiscoverService {
     // MARK: - Disk Cache (Detail)
 
     private func detailCacheURL(tmdbId: Int, type: TMDBMediaType) -> URL {
-        detailCacheDirectory.appendingPathComponent("\(type.rawValue)_\(tmdbId).json")
+        detailCacheDirectory.appendingPathComponent("v2_\(type.rawValue)_\(tmdbId).json")
     }
 
     private struct CachedDetail: Codable {
