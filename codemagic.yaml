@@ -74,6 +74,7 @@ workflows:
 
           enum Secrets {
               static let sentryDSN = "${SENTRY_DSN:-}"
+              static let tmdbAPIKey = "${TMDB_API_KEY:-}"
           }
           EOF
           echo "Wrote RivuletCore/Config/Secrets.swift (dsn set: $([ -n "${SENTRY_DSN:-}" ] && echo yes || echo no))"
@@ -248,6 +249,7 @@ workflows:
 
           enum Secrets {
               static let sentryDSN = "${SENTRY_DSN:-}"
+              static let tmdbAPIKey = "${TMDB_API_KEY:-}"
           }
           EOF
           echo "Wrote RivuletCore/Config/Secrets.swift (dsn set: $([ -n "${SENTRY_DSN:-}" ] && echo yes || echo no))"

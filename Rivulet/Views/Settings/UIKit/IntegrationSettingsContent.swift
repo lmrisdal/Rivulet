@@ -142,8 +142,8 @@ extension SettingsContent {
 
     private static func presentAddHeader(_ service: IntegrationService, on vc: UIViewController, initialText: String) {
         let entry = TextEntryViewController(
-            title: "Add Header", initialText: initialText, placeholder: "Name: Value",
-            hint: "For example CF-Access-Client-Id: abc123",
+            title: "Add Header", message: "Enter Name: Value, for example CF-Access-Client-Id: abc123",
+            fieldName: "Header", initialText: initialText,
             keyboardType: .asciiCapable,
             onCommit: { text in
                 guard let header = IntegrationHeader.parse(text) else {

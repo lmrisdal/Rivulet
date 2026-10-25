@@ -149,7 +149,8 @@ final class BackdropPlaneView: UIView {
             return
         }
         // In memory: draw now. Otherwise fade it in when it lands, never pop.
-        if let cached = ImageCacheManager.shared.cachedImage(for: url, quality: .full) {
+        if let url = item.artwork.backdrop ?? (item.isMetadataOnly ? nil : item.artwork.poster),
+           let cached = ImageCacheManager.shared.cachedImage(for: url, quality: .full) {
             panel.imageView.image = cached
             return
         }
