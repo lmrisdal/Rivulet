@@ -64,6 +64,8 @@ final class MediaDetailChromeView: UIView {
     var onPlayVersion: ((String) -> Void)?
     var onToggleWatchlist: (() -> Void)?
     var onShowFullDescription: ((MediaItemDetail) -> Void)?
+    /// A requested title arrived in the library: show its library copy.
+    var onOpenLibraryItem: ((MediaItem) -> Void)?
 
     /// The Play pill (rebuilt per item). Exposed so the host cell can point the
     /// focus engine at Play when the detail expands.
@@ -713,14 +715,27 @@ final class MediaDetailChromeView: UIView {
     private weak var requestLabel: UILabel?
     private var requestSnapshot: MediaRequestSnapshot?
     private var requestPollTask: Task<Void, Never>?
+    /// The title was on its way while this page was open, so its arrival in
+    /// the library should switch the page to the library copy.
+    private var requestAwaitingArrival = false
 
     /// How often to re-read a title that is on its way: every 5 s while it
-    /// downloads, every 10 s while it waits to start. nil = nothing to watch.
-    private static func pollInterval(for state: MediaRequestState?) -> Duration? {
+    /// downloads, every 10 s while it waits to start or to reach the library.
+    /// nil = nothing to watch.
+    private static func pollInterval(for state: MediaRequestState?, awaitingArrival: Bool) -> Duration? {
         switch state {
         case .downloading: return .seconds(5)
         case .pendingApproval, .processing, .partiallyAvailable: return .seconds(10)
-        case .requestable, .available, .blocklisted, nil: return nil
+        case .available: return awaitingArrival ? .seconds(10) : nil
+        case .requestable, .blocklisted, nil: return nil
+        }
+    }
+
+    /// States in which the title may already be in the library.
+    private static func mayBeInLibrary(_ state: MediaRequestState) -> Bool {
+        switch state {
+        case .processing, .partiallyAvailable, .available: return true
+        default: return false
         }
     }
 
@@ -738,6 +753,7 @@ final class MediaDetailChromeView: UIView {
         requestPollTask?.cancel()
         requestPollTask = nil
         requestSnapshot = nil
+        requestAwaitingArrival = false
         guard let tmdbID = item.tmdbID, let type = Self.seerrType(for: item),
               MediaRequestStatusResolver.shared.isEnabled else { return }
         let token = loadToken
@@ -761,10 +777,15 @@ final class MediaDetailChromeView: UIView {
         // A failed re-read keeps the last known state rather than hiding the pill.
         guard let snapshot else { return }
         requestSnapshot = snapshot
+        switch snapshot.state {
+        case .pendingApproval, .processing, .downloading: requestAwaitingArrival = true
+        default: break
+        }
         requestButton?.isHidden = false
         requestIcon?.image = UIImage(systemName: snapshot.state.systemImage)
         requestLabel?.text = snapshot.state.title
-        if requestPollTask == nil, Self.pollInterval(for: snapshot.state) != nil {
+        if requestPollTask == nil,
+           Self.pollInterval(for: snapshot.state, awaitingArrival: requestAwaitingArrival) != nil {
             startRequestPolling(tmdbID: tmdbID, type: type, token: token)
         }
     }
@@ -775,17 +796,48 @@ final class MediaDetailChromeView: UIView {
     private func startRequestPolling(tmdbID: Int, type: SeerrMediaType, token: UInt64) {
         requestPollTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
-                guard let interval = Self.pollInterval(for: self?.requestSnapshot?.state) else { break }
+                guard let interval = Self.pollInterval(for: self?.requestSnapshot?.state,
+                                                       awaitingArrival: self?.requestAwaitingArrival ?? false)
+                else { break }
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled, let self, self.loadToken == token else { return }
                 guard self.window != nil else { continue }
-                let next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
-                guard !Task.isCancelled else { return }
+                let previous = self.requestSnapshot
+                var next = await MediaRequestStatusResolver.shared.snapshot(tmdbID: tmdbID, type: type, refresh: true)
+                guard !Task.isCancelled, self.loadToken == token else { return }
+                // Radarr / Sonarr alone go quiet once a download is imported:
+                // treat that as processing and keep looking for the library copy.
+                if next == nil, let previous, previous.state.isDownloading,
+                   !IntegrationStore.isConfigured(.seerr) {
+                    next = MediaRequestSnapshot(state: .processing,
+                                                requestableSeasons: previous.requestableSeasons,
+                                                tvdbID: previous.tvdbID)
+                }
                 self.applyRequestSnapshot(next, tmdbID: tmdbID, type: type, token: token)
+                guard self.requestAwaitingArrival, let state = self.requestSnapshot?.state,
+                      Self.mayBeInLibrary(state) else { continue }
+                if await self.openLibraryCopy(tmdbID: tmdbID, type: type, token: token, automatic: true) {
+                    return
+                }
             }
             guard !Task.isCancelled, let self, self.loadToken == token else { return }
             self.requestPollTask = nil
         }
+    }
+
+    /// Looks for the library copy and hands it to the host. An automatic
+    /// switch only happens while this page is on screen with nothing over it.
+    private func openLibraryCopy(tmdbID: Int, type: SeerrMediaType, token: UInt64,
+                                 automatic: Bool) async -> Bool {
+        guard let item, let onOpenLibraryItem else { return false }
+        let found = await LibraryArrivalFinder.find(
+            tmdbID: tmdbID, type: type, title: item.title, year: item.year, snapshot: requestSnapshot)
+        guard let found, loadToken == token, window != nil else { return false }
+        if automatic, hostViewController?.presentedViewController != nil { return false }
+        requestPollTask?.cancel()
+        requestPollTask = nil
+        onOpenLibraryItem(found)
+        return true
     }
 
     private func refreshRequestState(tmdbID: Int, type: SeerrMediaType) {
@@ -798,6 +850,17 @@ final class MediaDetailChromeView: UIView {
 
     private func requestPressed(item: MediaItem, tmdbID: Int, type: SeerrMediaType) {
         guard let snapshot = requestSnapshot, let host = hostViewController else { return }
+        if Self.mayBeInLibrary(snapshot.state) {
+            let token = loadToken
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let opened = await self.openLibraryCopy(tmdbID: tmdbID, type: type, token: token, automatic: false)
+                if !opened {
+                    self.refreshRequestState(tmdbID: tmdbID, type: type)
+                }
+            }
+            return
+        }
         // Every other state is status only: pressing re-reads it.
         guard snapshot.state == .requestable else {
             refreshRequestState(tmdbID: tmdbID, type: type)

@@ -141,3 +141,42 @@ final class SeerrMediaDetailTests: XCTestCase {
         XCTAssertFalse(detail.hasPendingRequest)
     }
 }
+
+final class LibraryArrivalFinderTests: XCTestCase {
+    private func item(_ id: String, kind: MediaKind, title: String, year: Int? = nil,
+                      seriesTitle: String? = nil, parent: String? = nil, grandparent: String? = nil) -> MediaItem {
+        MediaItem(
+            ref: MediaItemRef(providerID: "plex:x", itemID: id),
+            kind: kind, title: title, sortTitle: nil, overview: nil, year: year, runtime: nil,
+            parentRef: parent.map { MediaItemRef(providerID: "plex:x", itemID: $0) },
+            grandparentRef: grandparent.map { MediaItemRef(providerID: "plex:x", itemID: $0) },
+            seriesTitle: seriesTitle, episodeNumber: nil, seasonNumber: nil, childProgress: nil,
+            userState: MediaUserState(isPlayed: false, viewOffset: 0, isFavorite: false, lastViewedAt: nil),
+            artwork: MediaArtwork(poster: nil, backdrop: nil, thumbnail: nil, logo: nil),
+            parentArtwork: nil, grandparentArtwork: nil)
+    }
+
+    func test_movie_matchesTitleAndYear() {
+        let items = [
+            item("1", kind: .movie, title: "Dune", year: 1984),
+            item("2", kind: .movie, title: "Dune: Part Two", year: 2024),
+            item("3", kind: .movie, title: "dune", year: 2021),
+        ]
+        let refs = LibraryArrivalFinder.candidateRefs(in: items, title: "Dune", year: 2021, kind: .movie)
+        XCTAssertEqual(refs.map(\.itemID), ["3"])
+    }
+
+    func test_show_matchesThroughSeasonsAndEpisodes_once() {
+        let items = [
+            item("10", kind: .season, title: "Season 1", seriesTitle: "Severance", parent: "9"),
+            item("11", kind: .episode, title: "Good News About Hell", seriesTitle: "Severance", grandparent: "9"),
+            item("12", kind: .movie, title: "Severance"),
+        ]
+        let refs = LibraryArrivalFinder.candidateRefs(in: items, title: "Severance", year: nil, kind: .show)
+        XCTAssertEqual(refs.map(\.itemID), ["9"])
+    }
+
+    func test_normalized_ignoresCasePunctuationAndAccents() {
+        XCTAssertEqual(LibraryArrivalFinder.normalized("Amélie!"), LibraryArrivalFinder.normalized("amelie"))
+    }
+}

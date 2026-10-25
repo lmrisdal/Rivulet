@@ -56,6 +56,9 @@ nonisolated struct SeerrMediaDetail: Decodable, Sendable {
         let seasons: [SeasonStatus]?
         let requests: [Request]?
         let downloadStatus: [SeerrDownload]?
+        /// The library copy once Seerr has seen it: Plex ratingKey or Jellyfin item id.
+        let ratingKey: String?
+        let jellyfinMediaId: String?
     }
 
     let id: Int?

@@ -76,6 +76,9 @@ nonisolated struct MediaRequestSnapshot: Sendable {
     let state: MediaRequestState
     let requestableSeasons: [SeerrMediaDetail.Season]
     let tvdbID: Int?
+    /// Where Seerr says the library copy is, once it has one.
+    var plexRatingKey: String? = nil
+    var jellyfinItemID: String? = nil
 }
 
 @MainActor
@@ -130,7 +133,11 @@ final class MediaRequestStatusResolver {
         let snapshot = MediaRequestState.resolve(
             seerrStatus: detail?.status, hasPendingRequest: detail?.hasPendingRequest ?? false,
             canRequestMore: canRequestMore, download: download
-        ).map { MediaRequestSnapshot(state: $0, requestableSeasons: requestable, tvdbID: tvdbID) }
+        ).map {
+            MediaRequestSnapshot(state: $0, requestableSeasons: requestable, tvdbID: tvdbID,
+                                 plexRatingKey: detail?.mediaInfo?.ratingKey,
+                                 jellyfinItemID: detail?.mediaInfo?.jellyfinMediaId)
+        }
         cache[key] = (snapshot, Date())
         return snapshot
     }

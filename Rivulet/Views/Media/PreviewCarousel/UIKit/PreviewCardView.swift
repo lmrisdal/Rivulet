@@ -264,6 +264,7 @@ final class PreviewCardView: UICollectionViewCell {
     var onPlayVersion: ((MediaItem, String) -> Void)?
     /// Info button → show the structured info popup (carries the loaded detail).
     var onShowInfo: ((MediaItemDetail) -> Void)?
+    var onOpenLibraryItem: ((MediaItem) -> Void)?
 
     /// Repaint the hero chrome's watch-derived bits from a re-fetched copy of
     /// the same item, without rebuilding the card (issue #228). Also updates
@@ -293,6 +294,9 @@ final class PreviewCardView: UICollectionViewCell {
         chromeView.onPlayVersion = { [weak self] sourceID in
             guard let self, let item = self.chromeView.item else { return }
             self.onPlayVersion?(item, sourceID)
+        }
+        chromeView.onOpenLibraryItem = { [weak self] libraryItem in
+            self?.onOpenLibraryItem?(libraryItem)
         }
         chromeView.onShowFullDescription = { [weak self] detail in
             self?.onShowInfo?(detail)

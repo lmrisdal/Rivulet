@@ -912,6 +912,22 @@ final class PreviewCarouselViewController: UIViewController {
         top.present(detail, animated: true)
     }
 
+    /// A requested title reached the library: show the library copy. A
+    /// standalone page is replaced by it, so Menu goes back to where the
+    /// request was opened from; over the carousel it opens on top.
+    private func openLibraryCopy(_ item: MediaItem) {
+        guard standaloneDetail, let presenter = presentingViewController else {
+            presentStandaloneDetail(item)
+            return
+        }
+        let replacement = PreviewCarouselViewController(
+            items: [item], selectedIndex: 0, sourceFrame: .zero, sourceTarget: nil,
+            standaloneDetail: true, onDismiss: onDismiss)
+        presenter.dismiss(animated: false) {
+            presenter.present(replacement, animated: true)
+        }
+    }
+
     /// "Go to Show" from an episode: the SHOW's own detail, so its Watched
     /// button acts on the whole show. `show` skips the fetch when the caller
     /// already has it. From a page this show's detail presented, goes back to
@@ -1606,6 +1622,7 @@ extension PreviewCarouselViewController: UICollectionViewDataSource, UICollectio
         cell.onPlay = { [weak self] item in self?.playHeroItem(item) }
         cell.onPlayVersion = { [weak self] item, sourceID in self?.playMediaItem(item, sourceID: sourceID) }
         cell.onShowInfo = { [weak self] detail in self?.presentInfoPopup(detail) }
+        cell.onOpenLibraryItem = { [weak self] item in self?.openLibraryCopy(item) }
         // Entry or paging completion marks the current cell via updateCurrentCellChrome.
         cell.setIsCurrent(indexPath.item == selectedIndex && hasRunEntryMorph,
                           animated: false)
