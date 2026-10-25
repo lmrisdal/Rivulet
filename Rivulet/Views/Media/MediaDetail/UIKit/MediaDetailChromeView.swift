@@ -886,12 +886,7 @@ final class MediaDetailChromeView: UIView {
             host.present(alert, animated: true)
             return
         }
-        let message = type == .tv
-            ? "Asks Seerr to add \(seasons.first.map { "season \($0.seasonNumber) of " } ?? "")this show."
-            : "Asks Seerr to add this movie."
-        host.present(ConfirmationPopupViewController(
-            title: "Request \(item.title)?", message: message, confirmTitle: "Request",
-            onConfirm: { send(seasons.map(\.seasonNumber)) }), animated: true)
+        send(seasons.map(\.seasonNumber))
     }
 
     private func sendRequest(tmdbID: Int, type: SeerrMediaType, seasons: [Int], tvdbID: Int?) {
