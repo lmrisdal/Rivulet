@@ -20,6 +20,8 @@ enum SidebarTab: Hashable {
     case home
     case discover
     case watchlist
+    /// Seerr requests and Radarr/Sonarr downloads.
+    case requests
     case library(key: String)
     /// A library on a non-Plex server. Ids, not the library value, so a
     /// renamed library keeps its tab (and its cached page) across reloads.

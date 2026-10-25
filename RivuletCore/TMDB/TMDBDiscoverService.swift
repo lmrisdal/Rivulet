@@ -162,6 +162,32 @@ actor TMDBDiscoverService {
         }
     }
 
+    // MARK: - Search
+
+    /// Search uses the fork owner's TMDB key; the upstream proxy has no public search contract.
+    func search(query: String) async throws -> [TMDBListItem] {
+        let apiKey = Secrets.tmdbAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apiKey.isEmpty else { return [] }
+        struct Lossy: Decodable {
+            let item: TMDBListItem?
+            init(from decoder: Decoder) throws { item = try? TMDBListItem(from: decoder) }
+        }
+        struct SearchResponse: Decodable { let results: [Lossy] }
+        var components = URLComponents(string: "https://api.themoviedb.org/3/search/multi")!
+        components.queryItems = [
+            URLQueryItem(name: "api_key", value: apiKey),
+            URLQueryItem(name: "query", value: query),
+            URLQueryItem(name: "include_adult", value: "false")
+        ]
+        var request = URLRequest(url: components.url!)
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        return try JSONDecoder().decode(SearchResponse.self, from: data).results.compactMap(\.item)
+    }
+
     // MARK: - Networking
 
     private func fetchData(endpoint: String, queryItems: [URLQueryItem]) async throws -> Data {

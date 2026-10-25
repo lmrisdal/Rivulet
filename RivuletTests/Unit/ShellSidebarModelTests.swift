@@ -202,6 +202,17 @@ final class ShellSidebarModelTests: XCTestCase {
         XCTAssertEqual(sections([])[0].items.first?.canSwitchProfile, false)
     }
 
+    func test_requests_followsWatchlistInTheTopGroup_onlyWhenShown() {
+        func top(_ showRequests: Bool) -> [SidebarTab] {
+            ShellSidebarModel.sections(
+                libraries: [], liveTVSources: [], combineLiveTV: true,
+                showDiscover: false, showWatchlist: true, showRequests: showRequests,
+                profileName: "Bain")[1].items.map(\.tab)
+        }
+        XCTAssertEqual(top(true), [.search, .home, .watchlist, .requests])
+        XCTAssertEqual(top(false), [.search, .home, .watchlist])
+    }
+
     func test_firstName() {
         XCTAssertEqual(ShellSidebarModel.firstName(of: "William Gurley"), "William")
         XCTAssertEqual(ShellSidebarModel.firstName(of: "  Mary  Ann\tSmith"), "Mary")

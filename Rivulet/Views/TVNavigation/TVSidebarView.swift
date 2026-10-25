@@ -35,6 +35,8 @@ struct TVSidebarView: View {
     @AppStorage("showDiscoverTab") private var showDiscoverTab = true
     @AppStorage("showWatchlistTab") private var showWatchlistTab = true
     @State private var selectedTab: SidebarTab = .home
+    /// Not observable from the Keychain store, so refreshed on `.integrationsDidChange`.
+    @State private var hasIntegrations = IntegrationStore.hasAnyConfigured
     @State private var showProfilePicker = false
     /// A profile was entered through the picker; any other close re-presents it.
     @State private var profileChosen = false
@@ -106,6 +108,7 @@ struct TVSidebarView: View {
             showWatchlist: showWatchlistTab,
             order: librarySettings.libraryOrder,
             hiddenKeys: librarySettings.hiddenLibraryKeys,
+            showRequests: hasIntegrations,
             profileName: profileName,
             profileAvatar: profileManager.selectedUser?.thumb.flatMap { URL(string: $0) },
             canSwitchProfile: profileManager.hasMultipleProfiles,
@@ -218,6 +221,12 @@ struct TVSidebarView: View {
         // The toggle went off, or the server's last playlist went.
         .onChange(of: visiblePlaylistProviders) { _, providers in
             if case .playlists(let providerID) = selectedTab, !providers.contains(providerID) {
+                selectedTab = .home
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .integrationsDidChange)) { _ in
+            hasIntegrations = IntegrationStore.hasAnyConfigured
+            if !hasIntegrations && selectedTab == .requests {
                 selectedTab = .home
             }
         }
@@ -535,6 +544,8 @@ struct TVSidebarView: View {
             return PlexHomeViewController(mode: .watchlist)
         case .playlists(let providerID):
             return PlexHomeViewController(mode: .playlists(providerID: providerID))
+        case .requests:
+            return RequestsViewController()
         case .search:
             let search = SearchContainerViewController()
             search.onNestedChange = { [nestedNavState] isNested in
@@ -611,7 +622,7 @@ struct TVSidebarView: View {
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
                 Color.clear
-            case .watchlist, .playlists:
+            case .watchlist, .playlists, .requests:
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
                 Color.clear
@@ -737,6 +748,16 @@ struct TVSidebarView: View {
                     }
                 })
             top.present(page, animated: true)
+        } else if item.isMetadataOnly {
+            Task { @MainActor in
+                guard let owned = await LibraryItemResolver.libraryItem(for: item) else {
+                    top.present(PreviewCarouselViewController(
+                        items: [item], selectedIndex: 0, sourceFrame: .zero, sourceTarget: nil,
+                        standaloneDetail: true, onDismiss: { _ in }), animated: true)
+                    return
+                }
+                presentDetail(owned, from: top)
+            }
         } else {
             let detail = PreviewCarouselViewController(
                 items: [item],

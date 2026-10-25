@@ -38,9 +38,7 @@ final class TMDBMetadataSource: MetadataSource {
     }
 
     func search(_ query: String) async throws -> [MediaItem] {
-        // TMDBDiscoverService doesn't currently expose a /search endpoint.
-        // Discover view doesn't search TMDB today; add when needed.
-        return []
+        try await service.search(query: query).map { TMDBMediaMapper.item($0) }
     }
 
     func recommendations(for ref: MediaItemRef) async throws -> [MediaItem] {

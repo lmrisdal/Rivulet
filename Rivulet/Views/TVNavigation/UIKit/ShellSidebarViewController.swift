@@ -779,6 +779,7 @@ final class ShellSidebarViewController: UIViewController {
             showWatchlist: flag("showWatchlistTab", default: true),
             order: LibrarySettingsManager.shared.libraryOrder,
             hiddenKeys: LibrarySettingsManager.shared.hiddenLibraryKeys,
+            showRequests: IntegrationStore.hasAnyConfigured,
             profileName: profileName)
     }
 

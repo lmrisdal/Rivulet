@@ -35,6 +35,40 @@ nonisolated struct ArrQueueItem: Decodable, Sendable {
     let sizeleft: Double?
 }
 
+/// One entry of the whole download queue, with the movie or series it belongs to.
+nonisolated struct ArrQueueRecord: Decodable, Sendable {
+    struct Image: Decodable, Sendable {
+        let coverType: String?
+        let remoteUrl: String?
+    }
+    struct Title: Decodable, Sendable {
+        let title: String?
+        let year: Int?
+        let tmdbId: Int?
+        let tvdbId: Int?
+        let images: [Image]?
+
+        var posterURL: URL? {
+            images?.first { $0.coverType == "poster" }?.remoteUrl.flatMap(URL.init(string:))
+        }
+    }
+    struct Episode: Decodable, Sendable {
+        let seasonNumber: Int?
+        let episodeNumber: Int?
+    }
+    let movieId: Int?
+    let seriesId: Int?
+    let size: Double?
+    let sizeleft: Double?
+    let status: String?
+    let trackedDownloadState: String?
+    /// A .NET TimeSpan, "hh:mm:ss" or "d.hh:mm:ss".
+    let timeleft: String?
+    let movie: Title?
+    let series: Title?
+    let episode: Episode?
+}
+
 nonisolated struct ArrClient: Sendable {
     let service: IntegrationService
     let http: IntegrationHTTPClient
@@ -59,6 +93,19 @@ nonisolated struct ArrClient: Sendable {
         let queue = try await http.get([ArrQueueItem].self, "api/v3/queue/details",
                                        query: [URLQueryItem(name: queryName, value: String(id))])
         return DownloadProgress(sizes: queue.map { ($0.size ?? 0, $0.sizeleft ?? 0) })
+    }
+
+    /// Everything in the download queue, in queue order.
+    func queue() async throws -> [ArrQueueRecord] {
+        struct Page: Decodable { let records: [ArrQueueRecord] }
+        var query = [URLQueryItem(name: "page", value: "1"), URLQueryItem(name: "pageSize", value: "200")]
+        if service == .radarr {
+            query.append(URLQueryItem(name: "includeMovie", value: "true"))
+        } else {
+            query.append(URLQueryItem(name: "includeSeries", value: "true"))
+            query.append(URLQueryItem(name: "includeEpisode", value: "true"))
+        }
+        return try await http.get(Page.self, "api/v3/queue", query: query).records
     }
 
     /// Asks Radarr or Sonarr to re-read its download clients now. Left alone

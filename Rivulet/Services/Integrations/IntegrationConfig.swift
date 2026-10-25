@@ -101,6 +101,7 @@ enum IntegrationStore {
             KeychainHelper.set(json, forKey: key(service))
         }
         MediaRequestStatusResolver.shared.invalidate()
+        NotificationCenter.default.post(name: .integrationsDidChange, object: nil)
     }
 
     static func update(_ service: IntegrationService, _ change: (inout IntegrationConfig) -> Void) {
@@ -112,4 +113,14 @@ enum IntegrationStore {
     static func isConfigured(_ service: IntegrationService) -> Bool {
         config(for: service).isConfigured
     }
+
+    /// Whether any service is set up: what puts Requests in the sidebar.
+    static var hasAnyConfigured: Bool {
+        IntegrationService.allCases.contains(where: isConfigured)
+    }
+}
+
+extension Notification.Name {
+    /// Posted after an integration's settings are saved.
+    static let integrationsDidChange = Notification.Name("integrationsDidChange")
 }

@@ -65,6 +65,16 @@ nonisolated struct SeerrMediaDetail: Decodable, Sendable {
     let seasons: [Season]?
     let externalIds: ExternalIDs?
     let mediaInfo: MediaInfo?
+    /// TMDB's own fields, which Seerr passes through. Movies carry `title` and
+    /// `releaseDate`, shows `name` and `firstAirDate`.
+    let title: String?
+    let name: String?
+    let overview: String?
+    let posterPath: String?
+    let backdropPath: String?
+    let releaseDate: String?
+    let firstAirDate: String?
+    let voteAverage: Double?
 
     var status: SeerrMediaStatus {
         mediaInfo?.status.flatMap(SeerrMediaStatus.init(rawValue:)) ?? .unknown
@@ -97,6 +107,37 @@ nonisolated struct SeerrMediaDetail: Decodable, Sendable {
     }
 }
 
+/// One entry of Seerr's request list. Carries no title or artwork: those come
+/// from the title's detail.
+nonisolated struct SeerrRequest: Decodable, Sendable {
+    struct Media: Decodable, Sendable {
+        let tmdbId: Int?
+        let tvdbId: Int?
+        let mediaType: String?
+        let status: Int?
+        let downloadStatus: [SeerrDownload]?
+        let ratingKey: String?
+        let jellyfinMediaId: String?
+    }
+    struct User: Decodable, Sendable {
+        let displayName: String?
+    }
+    struct RequestedSeason: Decodable, Sendable {
+        let seasonNumber: Int
+    }
+    let id: Int
+    let status: Int?
+    let type: String?
+    let is4k: Bool?
+    let media: Media?
+    let requestedBy: User?
+    let seasons: [RequestedSeason]?
+
+    var mediaType: SeerrMediaType? {
+        (media?.mediaType ?? type).flatMap(SeerrMediaType.init(rawValue:))
+    }
+}
+
 nonisolated struct SeerrClient: Sendable {
     let http: IntegrationHTTPClient
 
@@ -113,6 +154,18 @@ nonisolated struct SeerrClient: Sendable {
 
     func detail(tmdbID: Int, type: SeerrMediaType) async throws -> SeerrMediaDetail {
         try await http.get(SeerrMediaDetail.self, "api/v1/\(type.rawValue)/\(tmdbID)")
+    }
+
+    /// The newest requests first, from every user.
+    /// Most recently changed first, so a title that just became available leads History.
+    func requests(take: Int = 100) async throws -> [SeerrRequest] {
+        struct Page: Decodable { let results: [SeerrRequest] }
+        return try await http.get(Page.self, "api/v1/request", query: [
+            URLQueryItem(name: "take", value: String(take)),
+            URLQueryItem(name: "skip", value: "0"),
+            URLQueryItem(name: "filter", value: "all"),
+            URLQueryItem(name: "sort", value: "modified"),
+        ]).results
     }
 
     /// `seasons` is required for TV and ignored for movies.

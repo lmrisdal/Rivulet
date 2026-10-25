@@ -958,6 +958,8 @@ final class PlexHomeViewController: UIViewController {
     private var searchResults: [PlexMetadata] = []
     /// Jellyfin results for the current query; mixed into Plex's groups.
     private var jellyfinSearchResults: [MediaItem] = []
+    /// TMDB movies and shows for the current query that are on no server.
+    private var tmdbSearchResults: [MediaItem] = []
     private var isSearchLoading = false
     private var searchError: String?
     private var lastSubmittedQuery = ""
@@ -1030,6 +1032,7 @@ final class PlexHomeViewController: UIViewController {
             searchError = nil
             searchResults = []
             jellyfinSearchResults = []
+            tmdbSearchResults = []
             lastSubmittedQuery = ""
             applySnapshot(animated: false)
             return
@@ -1052,7 +1055,8 @@ final class PlexHomeViewController: UIViewController {
         guard case .search = mode else { return }
         let trimmed = trimmedSearchQuery
         guard trimmed.count >= Self.searchMinQueryLength else { return }
-        if trimmed == lastSubmittedQuery && !(searchResults.isEmpty && jellyfinSearchResults.isEmpty) { return }
+        if trimmed == lastSubmittedQuery
+            && !(searchResults.isEmpty && jellyfinSearchResults.isEmpty && tmdbSearchResults.isEmpty) { return }
 
         searchTask?.cancel()
         searchToken += 1
@@ -1126,6 +1130,32 @@ final class PlexHomeViewController: UIViewController {
         return .success(found.flatMap { $0 })
     }
 
+    /// TMDB is extra: a failure is an empty answer, never the page's error.
+    private func tmdbSearch(_ query: String) async -> [TMDBListItem] {
+        (try? await TMDBDiscoverService.shared.search(query: query)) ?? []
+    }
+
+    /// TMDB matches the user does not already own. Anything on the Plex
+    /// server (any library, `LibraryGUIDIndex`) is dropped, and so is a
+    /// title + year already in the library results, which is what catches
+    /// Jellyfin copies: those carry no TMDB id to look up.
+    private static func unownedTMDBResults(_ items: [TMDBListItem],
+                                           libraryResults: [MediaItem]) async -> [MediaItem] {
+        func key(_ title: String, _ year: Int?) -> String {
+            "\(title.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil))|\(year ?? 0)"
+        }
+        let owned = Set(libraryResults.filter { $0.kind == .movie || $0.kind == .show }
+            .map { key($0.title, $0.year) })
+        var out: [MediaItem] = []
+        for item in items {
+            if await LibraryGUIDIndex.shared.lookup(tmdbId: item.id, type: item.mediaType) != nil { continue }
+            let mapped = TMDBMediaMapper.item(item)
+            if owned.contains(key(mapped.title, mapped.year)) { continue }
+            out.append(mapped)
+        }
+        return out
+    }
+
     private func performSearch(query: String, token: Int) async {
         guard authManager.selectedServerToken != nil || ServerDataStore.shared.isSignedIn else { return }
 
@@ -1134,14 +1164,22 @@ final class PlexHomeViewController: UIViewController {
 
         async let plex = plexSearch(query)
         async let jellyfin = otherServersSearch(query)
-        let (plexResult, jellyfinResult) = await (plex, jellyfin)
+        async let tmdb = tmdbSearch(query)
+        let (plexResult, jellyfinResult, tmdbItems) = await (plex, jellyfin, tmdb)
         guard token == searchToken else { return }
 
         let filteredPlex = plexResult.map { filterSearchResults($0) }
         searchResults = (try? plexResult.get()) ?? []
         jellyfinSearchResults = (try? jellyfinResult.get()) ?? []
+        let tmdbResults = await Self.unownedTMDBResults(
+            tmdbItems,
+            libraryResults: mapToMediaItems((try? filteredPlex.get()) ?? []) + jellyfinSearchResults)
+        guard token == searchToken else { return }
+        tmdbSearchResults = tmdbResults
         isSearchLoading = false
-        searchError = Self.searchErrorMessage(plex: filteredPlex, jellyfin: jellyfinResult)
+        // A server failure only shows when TMDB has nothing to show either.
+        searchError = tmdbResults.isEmpty
+            ? Self.searchErrorMessage(plex: filteredPlex, jellyfin: jellyfinResult) : nil
         lastSubmittedQuery = query
         applySnapshot(animated: false)
         reconfigureVisibleSearchCells()
@@ -1184,7 +1222,7 @@ final class PlexHomeViewController: UIViewController {
 
         let filtered = filteredSearchResults
         let jellyfin = jellyfinSearchResults
-        guard !filtered.isEmpty || !jellyfin.isEmpty else { return [.searchState()] }
+        guard !filtered.isEmpty || !jellyfin.isEmpty || !tmdbSearchResults.isEmpty else { return [.searchState()] }
 
         // Same grouping as PlexSearchView.groupedResults, each group mixing
         // both servers (Jellyfin music is not browsable yet, so Music is Plex's).
@@ -1204,6 +1242,11 @@ final class PlexHomeViewController: UIViewController {
             // Music routing reads metas index-for-index; only an unmixed group
             // keeps that alignment, and only Music needs it.
             if group.jellyfin.isEmpty { searchGroupMetas[id] = group.metas }
+        }
+        // Last: what you own comes first, the rest of the world after it.
+        if !tmdbSearchResults.isEmpty {
+            sections.append(.searchGrid(id: .searchGroup("tmdb"), title: "Not in Your Library",
+                                        items: tmdbSearchResults))
         }
         return sections
     }
@@ -2356,19 +2399,7 @@ final class PlexHomeViewController: UIViewController {
     /// user owns; metadata-only items keep the Watchlist primary. Lookups are
     /// in-memory (LibraryGUIDIndex).
     private func upgradeDiscoverItems(_ items: [MediaItem]) async -> [MediaItem] {
-        guard let serverURL = authManager.selectedServerURL,
-              let token = authManager.selectedServerToken else { return items }
-        let providerID = MediaProviderRegistry.shared.plexProvider?.id ?? "plex:\(serverURL)"
-        var out = items
-        for (i, item) in items.enumerated() {
-            guard let decoded = TMDBMediaMapper.decodeItemID(item.ref.itemID),
-                  item.isMetadataOnly,
-                  discoverModel.inLibraryTMDBIds.contains(decoded.tmdbId),
-                  let match = await LibraryGUIDIndex.shared.lookup(tmdbId: decoded.tmdbId, type: decoded.type)
-            else { continue }
-            out[i] = PlexMediaMapper.item(match, providerID: providerID, serverURL: serverURL, authToken: token)
-        }
-        return out
+        await LibraryItemResolver.resolved(items)
     }
 
     // MARK: - State overlays (loading / empty / error / not-connected,
@@ -5262,6 +5293,18 @@ final class PlexHomeViewController: UIViewController {
     /// Standalone expanded detail (mirror of PreviewCarouselViewController's
     /// presentStandaloneDetail, hoisted for the hero Info buttons).
     private func presentStandaloneExpandedDetail(_ item: MediaItem) {
+        if item.isMetadataOnly {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let resolved = await LibraryItemResolver.resolved(item)
+                self.presentStandaloneExpandedDetailNow(resolved)
+            }
+            return
+        }
+        presentStandaloneExpandedDetailNow(item)
+    }
+
+    private func presentStandaloneExpandedDetailNow(_ item: MediaItem) {
         let detail = PreviewCarouselViewController(
             items: [item],
             selectedIndex: 0,
@@ -5440,15 +5483,25 @@ final class PlexHomeViewController: UIViewController {
         let loaded = section.items.indices.filter { !section.items[$0].isGridPlaceholder }
         guard let selected = loaded.firstIndex(of: indexPath.item) else { return }
 
-        presentPreviewOverlay(
-            items: loaded.map { section.items[$0] },
-            selectedIndex: selected,
-            sourceRowID: section.id.raw,
-            sourceItemID: allIDs[indexPath.item],
-            sourceIndexPath: indexPath,
-            sourceIndexMap: section.kind == .grid ? [indexPath.item: selected] : nil,
-            sourceItemIDs: loaded.map { allIDs[$0] }
-        )
+        let items = loaded.map { section.items[$0] }
+        let present = { [weak self] (items: [MediaItem]) in
+            self?.presentPreviewOverlay(
+                items: items,
+                selectedIndex: selected,
+                sourceRowID: section.id.raw,
+                sourceItemID: allIDs[indexPath.item],
+                sourceIndexPath: indexPath,
+                sourceIndexMap: section.kind == .grid ? [indexPath.item: selected] : nil,
+                sourceItemIDs: loaded.map { allIDs[$0] }
+            )
+        }
+        // TMDB tiles (search results, recommendations) open the library copy
+        // when the user owns the title. sourceItemIDs keep the original ids.
+        guard items.contains(where: \.isMetadataOnly) else {
+            present(items)
+            return
+        }
+        Task { @MainActor in present(await LibraryItemResolver.resolved(items)) }
     }
 
     /// Number of entries either side of the tapped one that get mapped for the

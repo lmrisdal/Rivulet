@@ -39,9 +39,8 @@ final class SearchContainerViewController: UIViewController {
 
         searchController.searchResultsUpdater = self
         searchController.searchBar.delegate = self
-        searchController.searchBar.placeholder = "Search your libraries"
-        // Otherwise a dimming view covers the results, which are the whole page, until the
-        // first query. `showsSearchResultsController` is unavailable on tvOS.
+        searchController.searchBar.placeholder = "Search"
+        // Keep the results page visible even before the first query.
         searchController.obscuresBackgroundDuringPresentation = false
 
         // A recents pill sets the query from inside the results controller;

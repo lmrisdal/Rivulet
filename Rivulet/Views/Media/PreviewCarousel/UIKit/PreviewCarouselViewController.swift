@@ -901,7 +901,23 @@ final class PreviewCarouselViewController: UIViewController {
                 || PlexHomeViewController.openPlaylistIfNeeded(item, from: self, onDismiss: restore)
             return
         }
-        // Over full screen, so viewDidAppear never fires on return; restore from onDismiss.
+        // A TMDB title the user owns opens its library copy.
+        if item.isMetadataOnly {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let resolved = await LibraryItemResolver.resolved(item)
+                self.presentStandaloneDetailNow(resolved)
+            }
+            return
+        }
+        presentStandaloneDetailNow(item)
+    }
+
+    private func presentStandaloneDetailNow(_ item: MediaItem) {
+        // The standalone detail is presented .overFullScreen, so THIS controller
+        // never disappears and therefore never re-appears — viewDidAppear does
+        // not fire on the way back. Restore focus from the dismiss callback,
+        // which is the only signal the presenter gets.
         let detail = PreviewCarouselViewController(
             items: [item],
             selectedIndex: 0,

@@ -108,6 +108,7 @@ enum ShellSidebarModel {
         showWatchlist: Bool,
         order: [String] = defaultOrder,
         hiddenKeys: Set<String> = [],
+        showRequests: Bool = false,
         profileName: String,
         profileAvatar: URL? = nil,
         canSwitchProfile: Bool = false,
@@ -148,6 +149,9 @@ enum ShellSidebarModel {
                 byKey[key].map { row in var item = row.item; item.arrangeKey = key; return item }
             }
             middle[0] = SidebarArrangement.Section(server: nil, keys: Array(first.keys.dropFirst(lead.count)))
+        }
+        if showRequests {
+            top.append(ShellSidebarItem(tab: .requests, title: "Requests", icon: "tray.and.arrow.down.fill"))
         }
         if !top.isEmpty {
             sections.append(ShellSidebarSection(title: nil, items: top))

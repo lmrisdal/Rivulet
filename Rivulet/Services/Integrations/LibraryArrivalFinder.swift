@@ -17,12 +17,18 @@ import Foundation
 enum LibraryArrivalFinder {
     static func find(tmdbID: Int, type: SeerrMediaType, title: String, year: Int?,
                      snapshot: MediaRequestSnapshot?) async -> MediaItem? {
+        await find(tmdbID: tmdbID, type: type, title: title, year: year,
+                   plexRatingKey: snapshot?.plexRatingKey, jellyfinItemID: snapshot?.jellyfinItemID)
+    }
+
+    static func find(tmdbID: Int, type: SeerrMediaType, title: String, year: Int?,
+                     plexRatingKey: String?, jellyfinItemID: String?) async -> MediaItem? {
         let providers = MediaProviderRegistry.shared.enabledProviders()
         var hinted: [(any MediaProvider, MediaItemRef)] = []
-        if let key = snapshot?.plexRatingKey, let plex = MediaProviderRegistry.shared.plexProvider {
+        if let key = plexRatingKey, let plex = MediaProviderRegistry.shared.plexProvider {
             hinted.append((plex, MediaItemRef(providerID: plex.id, itemID: key)))
         }
-        if let id = snapshot?.jellyfinItemID {
+        if let id = jellyfinItemID {
             for provider in providers where provider.kind == .jellyfin {
                 hinted.append((provider, MediaItemRef(providerID: provider.id, itemID: id)))
             }
