@@ -100,7 +100,7 @@ final class TMDBLogoCacheTests: XCTestCase {
         _ = await cache.logoURL(tmdbId: 42, type: .movie)
         _ = await cache.logoURL(tmdbId: 42, type: .movie)
 
-        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["tmdb/images/42?type=movie"], 1)
+        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["3/movie/42/images?"], 1)
     }
 
     func testNilResultIsCachedAndDoesNotRefetch() async {
@@ -112,7 +112,7 @@ final class TMDBLogoCacheTests: XCTestCase {
 
         XCTAssertNil(first)
         XCTAssertNil(second)
-        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["tmdb/images/42?type=tv"], 1)
+        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["3/tv/42/images?"], 1)
     }
 
     func testInflightDedupMergesConcurrentCalls() async {
@@ -128,7 +128,7 @@ final class TMDBLogoCacheTests: XCTestCase {
         let results = await [a, b, c]
 
         XCTAssertTrue(results.allSatisfy { $0 != nil })
-        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["tmdb/images/42?type=movie"], 1)
+        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["3/movie/42/images?"], 1)
     }
 
     func testDiskRoundTripSurvivesNewInstance() async {
@@ -144,11 +144,11 @@ final class TMDBLogoCacheTests: XCTestCase {
         let url = await cache2.logoURL(tmdbId: 42, type: .movie)
 
         XCTAssertEqual(url?.absoluteString, "https://image.tmdb.org/t/p/w500/abc.png")
-        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["tmdb/images/42?type=movie"], 1)
+        XCTAssertEqual(TMDBMockURLProtocol.hitCounts["3/movie/42/images?"], 1)
     }
 
     func testNetworkFailureDoesNotPoisonCache() async {
-        TMDBMockURLProtocol.responses["tmdb/images/42?type=movie"] = (500, Data())
+        TMDBMockURLProtocol.responses["3/movie/42/images?"] = (500, Data())
 
         let cache = TMDBLogoCache(session: makeMockSession(), directory: tempDir)
         let first = await cache.logoURL(tmdbId: 42, type: .movie)
@@ -166,7 +166,7 @@ final class TMDBLogoCacheTests: XCTestCase {
     // MARK: - Helpers
 
     private func stub(tmdbId: Int, type: TMDBMediaType, body: String) {
-        let key = "tmdb/images/\(tmdbId)?type=\(type.rawValue)"
+        let key = "3/\(type.rawValue)/\(tmdbId)/images?"
         TMDBMockURLProtocol.responses[key] = (200, body.data(using: .utf8)!)
     }
 

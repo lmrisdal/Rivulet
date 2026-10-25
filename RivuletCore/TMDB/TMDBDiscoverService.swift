@@ -5,7 +5,7 @@
 //  TMDBDiscoverService.swift
 //  Rivulet
 //
-//  Fetches list/discover/details endpoints from the TMDB proxy with caching.
+//  Fetches list/discover/details endpoints directly from TMDB with caching.
 //
 
 import Foundation
@@ -39,7 +39,7 @@ actor TMDBDiscoverService {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())
         listCacheDirectory = caches.appendingPathComponent("TMDBDiscoverListCache", isDirectory: true)
-        detailCacheDirectory = caches.appendingPathComponent("TMDBDiscoverDetailCache", isDirectory: true)
+        detailCacheDirectory = caches.appendingPathComponent("TMDBDiscoverDetailCacheDirect", isDirectory: true)
         try? FileManager.default.createDirectory(at: listCacheDirectory, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: detailCacheDirectory, withIntermediateDirectories: true)
     }
@@ -57,8 +57,8 @@ actor TMDBDiscoverService {
             return cached.items
         }
 
-        let endpoint = "tmdb/list/\(section.proxyPath)"
-        let queryItems = [URLQueryItem(name: "type", value: section.mediaType.rawValue)]
+        let endpoint = section.tmdbPath
+        let queryItems: [URLQueryItem] = []
 
         struct ListResponse: Decodable {
             let results: [TMDBListItem]
@@ -106,8 +106,8 @@ actor TMDBDiscoverService {
             return cached
         }
 
-        let endpoint = "tmdb/details/\(tmdbId)"
-        let queryItems = [URLQueryItem(name: "type", value: type.rawValue)]
+        let endpoint = "\(type.rawValue)/\(tmdbId)"
+        let queryItems = [URLQueryItem(name: "append_to_response", value: "credits")]
 
         guard let data = try? await fetchData(endpoint: endpoint, queryItems: queryItems),
               let decoded = try? JSONDecoder().decode(TMDBItemDetail.self, from: data) else {
@@ -133,7 +133,7 @@ actor TMDBDiscoverService {
     // MARK: - Discover (For You)
 
     func discover(type: TMDBMediaType, withGenres: [Int], withKeywords: [Int]) async -> [TMDBListItem] {
-        var items = [URLQueryItem(name: "type", value: type.rawValue)]
+        var items = [URLQueryItem]()
         if !withGenres.isEmpty {
             items.append(URLQueryItem(name: "with_genres", value: withGenres.map(String.init).joined(separator: "|")))
         }
@@ -144,7 +144,7 @@ actor TMDBDiscoverService {
 
         struct ListResponse: Decodable { let results: [TMDBListItem] }
 
-        guard let data = try? await fetchData(endpoint: "tmdb/discover/\(type.rawValue)", queryItems: items),
+        guard let data = try? await fetchData(endpoint: "discover/\(type.rawValue)", queryItems: items),
               let response = try? JSONDecoder().decode(ListResponse.self, from: data) else {
             return []
         }
@@ -164,45 +164,27 @@ actor TMDBDiscoverService {
 
     // MARK: - Search
 
-    /// Search uses the fork owner's TMDB key; the upstream proxy has no public search contract.
+    /// Search uses the same direct TMDB request builder as details and artwork.
     func search(query: String) async throws -> [TMDBListItem] {
-        let apiKey = Secrets.tmdbAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty else { return [] }
         struct Lossy: Decodable {
             let item: TMDBListItem?
             init(from decoder: Decoder) throws { item = try? TMDBListItem(from: decoder) }
         }
         struct SearchResponse: Decodable { let results: [Lossy] }
-        var components = URLComponents(string: "https://api.themoviedb.org/3/search/multi")!
-        components.queryItems = [
-            URLQueryItem(name: "api_key", value: apiKey),
+        let data = try await fetchData(endpoint: "search/multi", queryItems: [
             URLQueryItem(name: "query", value: query),
             URLQueryItem(name: "include_adult", value: "false")
-        ]
-        var request = URLRequest(url: components.url!)
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
+        ])
         return try JSONDecoder().decode(SearchResponse.self, from: data).results.compactMap(\.item)
     }
 
     // MARK: - Networking
 
     private func fetchData(endpoint: String, queryItems: [URLQueryItem]) async throws -> Data {
-        guard let url = URL(string: endpoint, relativeTo: TMDBConfig.proxyBaseURL) else {
+        guard let request = TMDBConfig.request(path: endpoint, queryItems: queryItems) else {
             throw URLError(.badURL)
         }
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
-        components?.queryItems = queryItems
-        guard let finalURL = components?.url else { throw URLError(.badURL) }
-
-        var request = URLRequest(url: finalURL)
-        request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await session.attestedData(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }

@@ -5,7 +5,7 @@
 //  TMDBClient.swift
 //  Rivulet
 //
-//  Lightweight TMDB client that talks to the Cloudflare Worker proxy.
+//  Lightweight TMDB client that talks directly to TMDB.
 //  Used only for per-item features (keywords/cast/genres/directors) that
 //  feed the personalized recommendation engine. Artwork (logos, backdrops)
 //  comes from Plex directly.
@@ -143,9 +143,9 @@ final class TMDBClient: @unchecked Sendable {
         }
 
         do {
-            async let keywordsResponse: TMDBKeywordsResponse = request(endpoint: "tmdb/keywords/\(tmdbId)", type: type)
-            async let creditsResponse: TMDBCreditsResponse = request(endpoint: "tmdb/credits/\(tmdbId)", type: type)
-            async let detailsResponse: TMDBDetails = request(endpoint: "tmdb/details/\(tmdbId)", type: type)
+            async let keywordsResponse: TMDBKeywordsResponse = request(endpoint: "\(type.rawValue)/\(tmdbId)/keywords", queryItems: [])
+            async let creditsResponse: TMDBCreditsResponse = request(endpoint: "\(type.rawValue)/\(tmdbId)/credits", queryItems: [])
+            async let detailsResponse: TMDBDetails = request(endpoint: "\(type.rawValue)/\(tmdbId)", queryItems: [])
 
             let (keywords, credits, details) = try await (keywordsResponse, creditsResponse, detailsResponse)
 
@@ -167,27 +167,11 @@ final class TMDBClient: @unchecked Sendable {
 
     // MARK: - Networking
 
-    private func request<T: Decodable>(endpoint: String, type: TMDBMediaType) async throws -> T {
-        try await request(endpoint: endpoint, queryItems: [
-            URLQueryItem(name: "type", value: type.rawValue)
-        ])
-    }
-
     private func request<T: Decodable>(endpoint: String, queryItems: [URLQueryItem]) async throws -> T {
-        guard let url = URL(string: endpoint, relativeTo: TMDBConfig.proxyBaseURL) else {
+        guard let request = TMDBConfig.request(path: endpoint, queryItems: queryItems) else {
             throw URLError(.badURL)
         }
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)
-        components?.queryItems = queryItems
-        guard let finalURL = components?.url else {
-            throw URLError(.badURL)
-        }
-
-        var request = URLRequest(url: finalURL)
-        request.httpMethod = "GET"
-        request.addValue("application/json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await session.attestedData(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
@@ -225,14 +209,14 @@ final class TMDBClient: @unchecked Sendable {
     /// TMDB — the page renders the Plex role thumb from first paint, and swapping
     /// in a different TMDB image seconds later is jarring. Returns nil if unresolved.
     func actorBiography(titleTmdbId: Int, type: TMDBMediaType, actorName: String) async -> String? {
-        guard let credits: TMDBCreditsResponse = try? await request(endpoint: "tmdb/credits/\(titleTmdbId)", type: type) else {
+        guard let credits: TMDBCreditsResponse = try? await request(endpoint: "\(type.rawValue)/\(titleTmdbId)/credits", queryItems: []) else {
             return nil
         }
         func norm(_ s: String) -> String { s.folding(options: .diacriticInsensitive, locale: .current).lowercased() }
         let target = norm(actorName)
         let match = (credits.cast ?? []).first { ($0.name.map(norm)) == target }
         guard let match, let personId = match.id else { return nil }
-        let person: TMDBPersonDetails? = try? await request(endpoint: "tmdb/person/\(personId)", queryItems: [])
+        let person: TMDBPersonDetails? = try? await request(endpoint: "person/\(personId)", queryItems: [])
         return person?.biography.flatMap { $0.isEmpty ? nil : $0 }
     }
 
@@ -241,20 +225,17 @@ final class TMDBClient: @unchecked Sendable {
     /// Structured cast for movie or show. Returns [] on any failure —
     /// callers treat empty as "fall back to Plex roles".
     func castCredits(tmdbId: Int, type: TMDBMediaType) async -> [TMDBCredit] {
-        let credits: TMDBCreditsResponse? = try? await request(endpoint: "tmdb/credits/\(tmdbId)", type: type)
+        let credits: TMDBCreditsResponse? = try? await request(endpoint: "\(type.rawValue)/\(tmdbId)/credits", queryItems: [])
         return credits?.cast ?? []
     }
 
     /// Episode-level cast: season regulars followed by episode's guest
-    /// stars. Requires proxy's `episode_credits` route; returns nil when
+    /// stars. Uses TMDB's episode credits endpoint; returns nil when
     /// unavailable so callers can fall back show-level `castCredits`.
     func episodeCastCredits(showTmdbId: Int, season: Int, episode: Int) async -> [TMDBCredit]? {
         let response: TMDBEpisodeCreditsResponse? = try? await request(
-            endpoint: "tmdb/episode_credits/\(showTmdbId)",
-            queryItems: [
-                URLQueryItem(name: "season", value: String(season)),
-                URLQueryItem(name: "episode", value: String(episode)),
-            ])
+            endpoint: "tv/\(showTmdbId)/season/\(season)/episode/\(episode)/credits",
+            queryItems: [])
         guard let response else { return nil }
         let merged = Self.mergedEpisodeCast(response)
         return merged.isEmpty ? nil : merged

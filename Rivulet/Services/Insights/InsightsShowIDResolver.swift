@@ -2,7 +2,7 @@
 // Copyright (C) 2025-2026 Bain Gurley
 
 // Resolves a show's TMDB id when Plex gives no tmdb:// guid: episodes carry a plex:// or tvdb://
-// grandparent guid, so tvdb/imdb ids go through the tmdb-proxy `/tmdb/find`, cached per show.
+// grandparent guid, so tvdb/imdb ids go through the direct TMDB `/find`, cached per show.
 
 import Foundation
 
@@ -17,7 +17,7 @@ actor InsightsShowIDResolver {
     // show every episode.
     private var cache: [String: Int?] = [:]
 
-    init(baseURL: URL = TMDBConfig.proxyBaseURL, session: URLSession? = nil) {
+    init(baseURL: URL = TMDBConfig.apiBaseURL, session: URLSession? = nil) {
         self.baseURL = baseURL
         if let session {
             self.session = session
@@ -43,7 +43,7 @@ actor InsightsShowIDResolver {
         return nil
     }
 
-    /// Hit `/tmdb/find/{externalId}?source={source}` and return the first TV
+    /// Hit `/find/{externalId}?external_source={source}` and return the first TV
     /// result's TMDB id. Result (including nil) cached per external id.
     private func find(external: String, source: String, cacheKey: String) async -> Int? {
         if let cached = cache[cacheKey] { return cached }
@@ -54,14 +54,9 @@ actor InsightsShowIDResolver {
 
     private func performFind(external: String, source: String) async -> Int? {
         guard let encoded = external.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: "tmdb/find/\(encoded)", relativeTo: baseURL) else { return nil }
-        var comps = URLComponents(url: url, resolvingAgainstBaseURL: true)
-        comps?.queryItems = [URLQueryItem(name: "source", value: source)]
-        guard let finalURL = comps?.url else { return nil }
-
-        var req = URLRequest(url: finalURL)
-        req.addValue("application/json", forHTTPHeaderField: "Accept")
-        guard let (data, response) = try? await session.attestedData(for: req),
+              let req = TMDBConfig.request(path: "find/\(encoded)",
+                  queryItems: [URLQueryItem(name: "external_source", value: source)], baseURL: baseURL),
+              let (data, response) = try? await session.data(for: req),
               let http = response as? HTTPURLResponse, http.statusCode == 200,
               let decoded = try? JSONDecoder().decode(FindResponse.self, from: data) else {
             return nil

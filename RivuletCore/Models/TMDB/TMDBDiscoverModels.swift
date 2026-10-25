@@ -57,8 +57,16 @@ enum TMDBDiscoverSection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    /// Path segment forwarded to the proxy after `/tmdb/list/`.
-    var proxyPath: String {
+    /// Direct TMDB path; trending uses its own namespace and time window.
+    var tmdbPath: String {
+        switch self {
+        case .movieTrending, .tvTrending: return "trending/\(mediaType.rawValue)/week"
+        default: return "\(mediaType.rawValue)/\(listCategory)"
+        }
+    }
+
+    /// List category shared by movie and TV endpoints.
+    var listCategory: String {
         switch self {
         case .movieTrending, .tvTrending: return "trending"
         case .moviePopular, .tvPopular: return "popular"
@@ -169,6 +177,8 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
         case releaseDate = "release_date"
         case firstAirDate = "first_air_date"
         case runtime
+        case episodeRunTime = "episode_run_time"
+        case credits
         case genres
         case voteAverage = "vote_average"
         case cast
@@ -217,10 +227,13 @@ struct TMDBItemDetail: Codable, Identifiable, Sendable {
         backdropPath = try? c.decode(String.self, forKey: .backdropPath)
         releaseDate = (try? c.decode(String.self, forKey: .releaseDate))
             ?? (try? c.decode(String.self, forKey: .firstAirDate))
-        runtime = try? c.decode(Int.self, forKey: .runtime)
+        runtime = (try? c.decode(Int.self, forKey: .runtime))
+            ?? (try? c.decode([Int].self, forKey: .episodeRunTime))?.first
         genres = (try? c.decode([TMDBGenre].self, forKey: .genres)) ?? []
         voteAverage = try? c.decode(Double.self, forKey: .voteAverage)
-        cast = (try? c.decode([TMDBCredit].self, forKey: .cast)) ?? []
+        struct Credits: Decodable { let cast: [TMDBCredit]? }
+        cast = (try? c.decode(Credits.self, forKey: .credits))?.cast
+            ?? (try? c.decode([TMDBCredit].self, forKey: .cast)) ?? []
         if c.contains(.mediaType) {
             let raw = try c.decode(String.self, forKey: .mediaType)
             guard let parsed = TMDBMediaType(rawValue: raw) else {
