@@ -62,6 +62,7 @@ final class ContinueWatchingCell: UICollectionViewCell {
         // The host is TVUIKit's focused size; `focusScale` trims it to the cell on focus.
         let host = Self.tile.hostSize
         card.contentSize = host
+        card.cardBackgroundColor = .clear
         contentView.addSubview(card)
         NSLayoutConstraint.activate([
             card.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),

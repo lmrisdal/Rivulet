@@ -705,7 +705,7 @@ final class MediaDetailChromeView: UIView {
         // The pill is the row's primary focus target (playFocusable feeds
         // the carousel's land-on-primary routing).
         playButton = pill
-        addRequestButton(item: item, after: pill)
+        addRequestButton(item: item, before: pill)
     }
 
     // MARK: - Request (Seerr) + download progress (Radarr / Sonarr)
@@ -747,9 +747,9 @@ final class MediaDetailChromeView: UIView {
         }
     }
 
-    /// The Request pill after Watchlist, added once the integrations answer,
+    /// The Request pill, first in the row (before Watchlist), added once the integrations answer,
     /// so a title they know nothing about never grows a button.
-    private func addRequestButton(item: MediaItem, after anchor: UIView) {
+    private func addRequestButton(item: MediaItem, before anchor: UIView) {
         requestPollTask?.cancel()
         requestPollTask = nil
         requestSnapshot = nil
@@ -766,7 +766,9 @@ final class MediaDetailChromeView: UIView {
             self.requestIcon = icon
             self.requestLabel = label
             pill.onPrimaryAction = { [weak self] in self?.requestPressed(item: item, tmdbID: tmdbID, type: type) }
-            self.actionButtonsStack.insertArrangedSubview(pill, at: index + 1)
+            self.actionButtonsStack.insertArrangedSubview(pill, at: index)
+            // Leftmost, so it is the row's primary focus target from now on.
+            self.playButton = pill
             self.applyRequestSnapshot(snapshot, tmdbID: tmdbID, type: type, token: token)
         }
     }

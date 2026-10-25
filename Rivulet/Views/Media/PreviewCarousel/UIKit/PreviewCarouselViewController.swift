@@ -598,8 +598,10 @@ final class PreviewCarouselViewController: UIViewController {
         imageView.contentMode = .scaleAspectFill
         imageView.clipsToBounds = true
         imageView.backgroundColor = .black
-        if imageView.image == nil, let url = items[index].artwork.backdrop ?? items[index].artwork.poster {
+        if imageView.image == nil {
+            let item = items[index]
             Task { [weak imageView] in
+                guard let url = await BackdropPlaneView.artworkURL(for: item) else { return }
                 imageView?.image = await ImageCacheManager.shared.image(for: url, quality: .full)
             }
         }
@@ -1215,8 +1217,11 @@ final class PreviewCarouselViewController: UIViewController {
         let prefetchIndex = newIndex + direction * 2
         if items.indices.contains(prefetchIndex) {
             let item = items[prefetchIndex]
-            for url in [item.artwork.backdrop ?? item.artwork.poster, item.artwork.logo].compactMap({ $0 }) {
-                Task { _ = await ImageCacheManager.shared.image(for: url) }
+            Task {
+                let backdrop = await BackdropPlaneView.artworkURL(for: item)
+                for url in [backdrop, item.artwork.logo].compactMap({ $0 }) {
+                    _ = await ImageCacheManager.shared.image(for: url)
+                }
             }
         }
 

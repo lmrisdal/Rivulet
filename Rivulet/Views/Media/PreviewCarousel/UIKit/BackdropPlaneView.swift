@@ -124,6 +124,19 @@ final class BackdropPlaneView: UIView {
         return panel
     }
 
+    /// The art to draw for `item`: its backdrop, or for a not-owned title
+    /// that arrived without one (a watchlist entry carries only a poster),
+    /// TMDB's backdrop. The poster is the last resort.
+    static func artworkURL(for item: MediaItem) async -> URL? {
+        if let backdrop = item.artwork.backdrop { return backdrop }
+        if item.isMetadataOnly,
+           let source = MetadataSourceRegistry.shared.source(for: TMDBMediaMapper.providerID),
+           let backdrop = try? await source.itemDetail(item.ref).item.artwork.backdrop {
+            return backdrop
+        }
+        return item.artwork.poster
+    }
+
     private func loadArtwork(into panel: Panel) {
         guard panel.index >= 0 && panel.index < items.count else { return }
         let item = items[panel.index]
@@ -131,7 +144,7 @@ final class BackdropPlaneView: UIView {
         let token = panel.loadToken
         // Backdrop falls back to poster. This plane fills most of the screen in
         // both carousel and expanded-detail, so decode at full quality.
-        guard let url = item.artwork.backdrop ?? item.artwork.poster else {
+        if !item.isMetadataOnly, item.artwork.backdrop == nil, item.artwork.poster == nil {
             panel.imageView.image = nil
             return
         }
@@ -142,6 +155,7 @@ final class BackdropPlaneView: UIView {
         }
         panel.imageView.image = nil
         Task { [weak panel] in
+            guard let url = await Self.artworkURL(for: item) else { return }
             let image = await ImageCacheManager.shared.image(for: url, quality: .full)
             await MainActor.run {
                 guard let panel, panel.loadToken == token else { return }
